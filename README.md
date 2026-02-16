@@ -23,6 +23,8 @@ pip install -r requirements.txt
 python main.py
 ```
 
+Follow the on-screen menu to record from microphone or load an audio file, then optionally save the generated tabs.
+
 ## Project Structure
 
 - `main.py` - entry point
