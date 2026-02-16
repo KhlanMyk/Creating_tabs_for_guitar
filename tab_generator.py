@@ -1,54 +1,70 @@
 """
 Guitar tab generator module
 """
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+
+import librosa
 
 
 class GuitarTabGenerator:
     """Class for generating guitar tabs"""
 
-    STANDARD_TUNING = {
-        "E2": (6, 0),
-        "F2": (6, 1),
-        "F#2": (6, 2),
-        "G2": (6, 3),
-        "A2": (5, 0),
-        "B2": (5, 2),
-        "C3": (5, 3),
-        "D3": (4, 0),
-        "E3": (4, 2),
-        "F3": (4, 3),
-        "G3": (3, 0),
-        "A3": (3, 2),
-        "B3": (2, 0),
-        "C4": (2, 1),
-        "D4": (2, 3),
-        "E4": (1, 0),
-        "F4": (1, 1),
-        "G4": (1, 3),
-        "A4": (1, 5),
+    OPEN_STRING_MIDI = {
+        6: 40,  # E2
+        5: 45,  # A2
+        4: 50,  # D3
+        3: 55,  # G3
+        2: 59,  # B3
+        1: 64,  # E4
     }
 
-    def __init__(self):
+    def __init__(self, max_fret: int = 15):
         """Initialize tab generator"""
         self.tabs = {1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
+        self.max_fret = max_fret
+        self._last_position: Optional[Tuple[int, int]] = None
 
-    def note_to_tab_position(self, note_name: str) -> List[Tuple[int, int]]:
-        """Convert note name to fretboard position"""
-        if note_name in self.STANDARD_TUNING:
-            return [self.STANDARD_TUNING[note_name]]
-        return [(1, 0)]
+    def set_max_fret(self, max_fret: int):
+        """Set maximum fret for tab generation."""
+        self.max_fret = max_fret
+
+    def note_to_tab_positions(self, note_name: str) -> List[Tuple[int, int]]:
+        """Convert note name to possible fretboard positions."""
+        try:
+            note_midi = int(librosa.note_to_midi(note_name))
+        except Exception:
+            return []
+
+        positions = []
+        for string, open_midi in self.OPEN_STRING_MIDI.items():
+            fret = note_midi - open_midi
+            if 0 <= fret <= self.max_fret:
+                positions.append((string, fret))
+        return positions
+
+    def _choose_position(self, positions: List[Tuple[int, int]]) -> Tuple[int, int]:
+        if not positions:
+            return (1, 0)
+        if self._last_position is None:
+            return sorted(positions, key=lambda x: (x[1], x[0]))[0]
+        last_string, last_fret = self._last_position
+        return sorted(
+            positions,
+            key=lambda x: (abs(x[1] - last_fret), abs(x[0] - last_string), x[1]),
+        )[0]
 
     def generate_tabs(self, notes: List[Dict]) -> Dict[int, List]:
         """Generate tab positions from note list"""
         self.tabs = {1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
+        self._last_position = None
 
         for note_info in notes:
             note_name = note_info.get("note")
             if not note_name:
                 continue
-            positions = self.note_to_tab_position(note_name)
-            string, fret = positions[0]
+            positions = self.note_to_tab_positions(note_name)
+            string, fret = self._choose_position(positions)
+            self._last_position = (string, fret)
             self.tabs[string].append(
                 {
                     "fret": fret,
