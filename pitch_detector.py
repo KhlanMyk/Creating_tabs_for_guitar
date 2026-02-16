@@ -86,25 +86,67 @@ class PitchDetector:
         min_duration: float = 0.1,
         min_voiced_prob: float = 0.75,
         merge_gap: float = 0.05,
+        use_harmonic: bool = False,
+        segment_seconds: float | None = None,
     ) -> List[dict]:
-        """Extract notes from audio signal
-        
+        """Extract notes from audio signal.
+
         Args:
             audio: Audio data
             min_duration: Minimum note duration in seconds
-            
+            min_voiced_prob: Minimum voiced probability
+            merge_gap: Merge notes separated by small gaps
+            use_harmonic: Use harmonic component for detection
+            segment_seconds: Process audio in segments (seconds)
+
         Returns:
             List of note dictionaries
         """
-        f0, times, voiced_probs = self.detect_pitch(audio)
+        if segment_seconds and segment_seconds > 0:
+            hop = int(self.sample_rate * segment_seconds)
+            all_notes = []
+            for start in range(0, len(audio), hop):
+                segment = audio[start:start + hop]
+                if segment.size == 0:
+                    continue
+                offset = start / self.sample_rate
+                segment_notes = self._extract_notes_from_segment(
+                    segment,
+                    min_duration=min_duration,
+                    min_voiced_prob=min_voiced_prob,
+                    time_offset=offset,
+                    use_harmonic=use_harmonic,
+                )
+                all_notes.extend(segment_notes)
+            return self._merge_adjacent_notes(all_notes, merge_gap=merge_gap)
+
+        notes = self._extract_notes_from_segment(
+            audio,
+            min_duration=min_duration,
+            min_voiced_prob=min_voiced_prob,
+            time_offset=0.0,
+            use_harmonic=use_harmonic,
+        )
+        return self._merge_adjacent_notes(notes, merge_gap=merge_gap)
+
+    def _extract_notes_from_segment(
+        self,
+        audio: np.ndarray,
+        min_duration: float,
+        min_voiced_prob: float,
+        time_offset: float,
+        use_harmonic: bool,
+    ) -> List[dict]:
+        processed = librosa.effects.harmonic(audio) if use_harmonic else audio
+        f0, times, voiced_probs = self.detect_pitch(processed)
         notes = []
         current_note = None
         note_start_time = None
-        
+
         for i, (freq, time) in enumerate(zip(f0, times)):
             voiced_ok = i < len(voiced_probs) and voiced_probs[i] >= min_voiced_prob
             note_name, midi = self.frequency_to_note(freq if voiced_ok else None)
-            
+
             if note_name is None:
                 if current_note is not None:
                     duration = time - note_start_time
@@ -113,9 +155,9 @@ class PitchDetector:
                             "note": current_note,
                             "midi": current_midi,
                             "frequency": current_freq,
-                            "start_time": note_start_time,
-                            "end_time": time,
-                            "duration": duration
+                            "start_time": note_start_time + time_offset,
+                            "end_time": time + time_offset,
+                            "duration": duration,
                         })
                     current_note = None
             else:
@@ -127,15 +169,15 @@ class PitchDetector:
                                 "note": current_note,
                                 "midi": current_midi,
                                 "frequency": current_freq,
-                                "start_time": note_start_time,
-                                "end_time": time,
-                                "duration": duration
+                                "start_time": note_start_time + time_offset,
+                                "end_time": time + time_offset,
+                                "duration": duration,
                             })
                     current_note = note_name
                     current_midi = midi
                     current_freq = freq
                     note_start_time = time
-        
+
         if current_note is not None and len(times) > 0:
             duration = times[-1] - note_start_time
             if duration >= min_duration:
@@ -143,12 +185,12 @@ class PitchDetector:
                     "note": current_note,
                     "midi": current_midi,
                     "frequency": current_freq,
-                    "start_time": note_start_time,
-                    "end_time": times[-1],
-                    "duration": duration
+                    "start_time": note_start_time + time_offset,
+                    "end_time": times[-1] + time_offset,
+                    "duration": duration,
                 })
-        
-        return self._merge_adjacent_notes(notes, merge_gap=merge_gap)
+
+        return notes
 
     def _merge_adjacent_notes(self, notes: List[dict], merge_gap: float = 0.05) -> List[dict]:
         """Merge adjacent notes of the same pitch separated by small gaps."""

@@ -23,6 +23,13 @@ def main():
         help="Minimum voiced probability",
     )
     parser.add_argument("--max-fret", type=int, default=15, help="Max fret for tabs")
+    parser.add_argument("--use-harmonic", action="store_true", help="Use harmonic component")
+    parser.add_argument(
+        "--segment-seconds",
+        type=float,
+        default=None,
+        help="Process audio in segments (seconds)",
+    )
     parser.add_argument("--test", action="store_true", help="Run sine test")
     args = parser.parse_args()
 
@@ -92,6 +99,8 @@ def main():
         audio,
         min_duration=args.min_duration,
         min_voiced_prob=args.min_voiced_prob,
+        use_harmonic=args.use_harmonic,
+        segment_seconds=args.segment_seconds,
     )
     print(f"Notes found: {len(notes)}")
 

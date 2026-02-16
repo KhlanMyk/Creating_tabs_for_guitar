@@ -29,6 +29,7 @@ python main.py
 python main.py --input song.mp3 --output tabs.txt
 python main.py --duration 5 --output tabs.txt
 python main.py --min-duration 0.08 --min-voiced-prob 0.8 --max-fret 12
+python main.py --input song.mp3 --use-harmonic --segment-seconds 15
 python main.py --test
 ```
 
