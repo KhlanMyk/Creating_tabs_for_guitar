@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
 from audio_processor import AudioProcessor
+from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
@@ -56,6 +57,7 @@ class GuitarTabApp(tk.Tk):
         tk.Button(control_frame, text="Load File", command=self.on_load).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Load + Generate", command=self.on_load_and_generate).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Analyze", command=self.on_analyze).pack(side=tk.LEFT, padx=5)
+        tk.Button(control_frame, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=5)
 
@@ -171,6 +173,42 @@ class GuitarTabApp(tk.Tk):
             f"Success: {result.success}"
         )
         messagebox.showinfo("Sine test", message)
+
+    def on_best_quality(self):
+        if self.audio_data is None:
+            messagebox.showwarning("No audio", "Please record or load audio first.")
+            return
+
+        try:
+            max_fret = int(self.max_fret_var.get())
+        except ValueError:
+            messagebox.showerror("Invalid input", "Max fret must be an integer.")
+            return
+
+        def task():
+            self.set_status("Auto-tuning parameters...")
+            try:
+                tune = find_best_extraction(self.audio_data, self.pitch_det, use_harmonic=True)
+                self.tab_gen.set_max_fret(max_fret)
+                self.tab_gen.generate_tabs(tune.notes)
+                tabs_text = self.tab_gen.format_tabs_as_text()
+                self.output.delete("1.0", tk.END)
+                self.output.insert(tk.END, tabs_text)
+
+                self.min_duration_var.set(str(tune.min_duration))
+                self.min_voiced_var.set(str(tune.min_voiced_prob))
+                self.segment_var.set(str(tune.segment_seconds))
+                self.use_harmonic_var.set(tune.use_harmonic)
+
+                self.set_status(
+                    f"Best done. Notes: {len(tune.notes)} | "
+                    f"md={tune.min_duration}, vp={tune.min_voiced_prob}, seg={tune.segment_seconds}"
+                )
+            except Exception as exc:
+                self.set_status("Auto-tune failed")
+                messagebox.showerror("Error", str(exc))
+
+        threading.Thread(target=task, daemon=True).start()
 
     def on_save(self):
         if not self.output.get("1.0", tk.END).strip():

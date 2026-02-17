@@ -3,6 +3,7 @@ import argparse
 import sys
 
 from audio_processor import AudioProcessor
+from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
@@ -31,6 +32,7 @@ def main():
         help="Process audio in segments (seconds)",
     )
     parser.add_argument("--test", action="store_true", help="Run sine test")
+    parser.add_argument("--auto-tune", action="store_true", help="Auto-tune extraction parameters")
     args = parser.parse_args()
 
     if args.gui:
@@ -95,13 +97,23 @@ def main():
         return
 
     print("\nAnalyzing audio...")
-    notes = pitch_det.extract_notes_from_audio(
-        audio,
-        min_duration=args.min_duration,
-        min_voiced_prob=args.min_voiced_prob,
-        use_harmonic=args.use_harmonic,
-        segment_seconds=args.segment_seconds,
-    )
+    if args.auto_tune:
+        tune = find_best_extraction(audio, pitch_det, use_harmonic=True)
+        notes = tune.notes
+        print(
+            "Auto-tune: "
+            f"min_duration={tune.min_duration}, "
+            f"min_voiced_prob={tune.min_voiced_prob}, "
+            f"segment_seconds={tune.segment_seconds}"
+        )
+    else:
+        notes = pitch_det.extract_notes_from_audio(
+            audio,
+            min_duration=args.min_duration,
+            min_voiced_prob=args.min_voiced_prob,
+            use_harmonic=args.use_harmonic,
+            segment_seconds=args.segment_seconds,
+        )
     print(f"Notes found: {len(notes)}")
 
     print("\nGenerating tabs...")
