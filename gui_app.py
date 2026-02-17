@@ -8,6 +8,7 @@ from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
+from tab_synth import synthesize_from_tabs_text
 
 
 class GuitarTabApp(tk.Tk):
@@ -59,6 +60,7 @@ class GuitarTabApp(tk.Tk):
         tk.Button(control_frame, text="Analyze", command=self.on_analyze).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=5)
+        tk.Button(control_frame, text="Render Guitar Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=5)
 
         self.status_var = tk.StringVar(value="Ready")
@@ -226,6 +228,33 @@ class GuitarTabApp(tk.Tk):
             self.set_status("Tabs saved")
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
+
+    def on_render_audio(self):
+        tabs_text = self.output.get("1.0", tk.END).strip()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+
+        out_path = filedialog.asksaveasfilename(
+            title="Save synthesized audio",
+            defaultextension=".wav",
+            filetypes=[("WAV audio", "*.wav")],
+        )
+        if not out_path:
+            return
+
+        def task():
+            self.set_status("Synthesizing guitar audio from tabs...")
+            try:
+                result = synthesize_from_tabs_text(tabs_text, output_path=out_path, play=True)
+                self.set_status(
+                    f"Audio rendered: {result.notes_count} notes, {result.duration:.1f}s"
+                )
+            except Exception as exc:
+                self.set_status("Audio render failed")
+                messagebox.showerror("Error", str(exc))
+
+        threading.Thread(target=task, daemon=True).start()
 
 
 if __name__ == "__main__":

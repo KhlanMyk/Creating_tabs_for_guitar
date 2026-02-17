@@ -7,6 +7,7 @@ from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
+from tab_synth import synthesize_from_tabs_file
 
 
 def main():
@@ -33,6 +34,9 @@ def main():
     )
     parser.add_argument("--test", action="store_true", help="Run sine test")
     parser.add_argument("--auto-tune", action="store_true", help="Auto-tune extraction parameters")
+    parser.add_argument("--synth-tabs", type=str, help="Path to tabs txt for audio synthesis")
+    parser.add_argument("--synth-output", type=str, default="tabs_synth.wav", help="Output wav path")
+    parser.add_argument("--play-synth", action="store_true", help="Play synthesized tabs audio")
     args = parser.parse_args()
 
     if args.gui:
@@ -56,6 +60,18 @@ def main():
         print(
             f"Test expected {result.expected_note}, detected {result.detected_note}, "
             f"notes={result.detected_count}, success={result.success}"
+        )
+        return
+
+    if args.synth_tabs:
+        result = synthesize_from_tabs_file(
+            tabs_path=args.synth_tabs,
+            output_path=args.synth_output,
+            play=args.play_synth,
+        )
+        print(
+            f"Synth complete: notes={result.notes_count}, "
+            f"duration={result.duration:.2f}s, output={args.synth_output}"
         )
         return
 

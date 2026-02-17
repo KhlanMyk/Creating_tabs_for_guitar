@@ -31,6 +31,7 @@ python main.py --duration 5 --output tabs.txt
 python main.py --min-duration 0.08 --min-voiced-prob 0.8 --max-fret 12
 python main.py --input song.mp3 --use-harmonic --segment-seconds 15
 python main.py --input song.mp3 --auto-tune --output tabs.txt
+python main.py --synth-tabs tabs.txt --synth-output tabs_synth.wav --play-synth
 python main.py --test
 ```
 
@@ -42,6 +43,7 @@ python main.py --gui
 
 The GUI includes a **Run Test** button to verify detection on a 440 Hz sine wave.
 Use **Best Quality** in GUI to auto-pick extraction parameters for the current audio.
+Use **Render Guitar Audio** to synthesize and play guitar-like sound from generated tabs.
 
 Follow the on-screen menu to record from microphone or load an audio file, then optionally save the generated tabs.
 
