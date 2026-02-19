@@ -96,33 +96,21 @@ def synthesize_from_tabs_text(
     sample_rate: int = 44100,
     step_seconds: float = 0.14,
     note_seconds: float = 0.18,
+    decay: float = 0.996,
+    gain: float = 0.35,
+    transpose_semitones: int = 0,
     play: bool = False,
 ) -> SynthResult:
     """Render tabs text to a wav file and optionally play it."""
-    grid, cols = parse_tabs_text(tab_text)
-
-    total_dur = max(note_seconds + cols * step_seconds, 0.1)
-    audio = np.zeros(int(total_dur * sample_rate), dtype=np.float32)
-
-    notes_count = 0
-
-    # grid rows: [e, B, G, D, A, E] => string numbers [1..6]
-    for c in range(cols):
-        start_idx = int(c * step_seconds * sample_rate)
-        for row_idx in range(6):
-            token = grid[row_idx][c]
-            if token == '--':
-                continue
-            fret = int(token)
-            string_num = row_idx + 1
-            open_midi = OPEN_STRING_MIDI[string_num]
-            midi = open_midi + fret
-            freq = _midi_to_hz(midi)
-
-            note = _karplus_strong(freq, note_seconds, sample_rate)
-            end_idx = min(len(audio), start_idx + len(note))
-            audio[start_idx:end_idx] += note[: end_idx - start_idx] * 0.35
-            notes_count += 1
+    audio, notes_count, total_dur = synthesize_audio_array_from_tabs_text(
+        tab_text,
+        sample_rate=sample_rate,
+        step_seconds=step_seconds,
+        note_seconds=note_seconds,
+        decay=decay,
+        gain=gain,
+        transpose_semitones=transpose_semitones,
+    )
 
     peak = float(np.max(np.abs(audio))) if len(audio) else 1.0
     if peak > 0:
@@ -137,12 +125,64 @@ def synthesize_from_tabs_text(
     return SynthResult(sample_rate=sample_rate, duration=total_dur, notes_count=notes_count)
 
 
+def synthesize_audio_array_from_tabs_text(
+    tab_text: str,
+    sample_rate: int = 44100,
+    step_seconds: float = 0.14,
+    note_seconds: float = 0.18,
+    decay: float = 0.996,
+    gain: float = 0.35,
+    transpose_semitones: int = 0,
+    max_duration_seconds: float | None = None,
+) -> Tuple[np.ndarray, int, float]:
+    """Render tabs text to an in-memory audio array.
+
+    Returns:
+        (audio, notes_count, duration_seconds)
+    """
+    grid, cols = parse_tabs_text(tab_text)
+
+    if max_duration_seconds is not None and max_duration_seconds > 0:
+        approx_cols = int(max(1, (max_duration_seconds - note_seconds) / max(step_seconds, 1e-6)))
+        cols = max(1, min(cols, approx_cols))
+
+    total_dur = max(note_seconds + cols * step_seconds, 0.1)
+    audio = np.zeros(int(total_dur * sample_rate), dtype=np.float32)
+    notes_count = 0
+
+    for c in range(cols):
+        start_idx = int(c * step_seconds * sample_rate)
+        for row_idx in range(6):
+            token = grid[row_idx][c]
+            if token == '--':
+                continue
+            fret = int(token)
+            string_num = row_idx + 1
+            open_midi = OPEN_STRING_MIDI[string_num]
+            midi = open_midi + fret + transpose_semitones
+            freq = _midi_to_hz(midi)
+
+            note = _karplus_strong(freq, note_seconds, sample_rate, decay=decay)
+            end_idx = min(len(audio), start_idx + len(note))
+            audio[start_idx:end_idx] += note[: end_idx - start_idx] * gain
+            notes_count += 1
+
+    peak = float(np.max(np.abs(audio))) if len(audio) else 1.0
+    if peak > 0:
+        audio = audio / max(peak, 1.0)
+
+    return audio, notes_count, total_dur
+
+
 def synthesize_from_tabs_file(
     tabs_path: str,
     output_path: str,
     sample_rate: int = 44100,
     step_seconds: float = 0.14,
     note_seconds: float = 0.18,
+    decay: float = 0.996,
+    gain: float = 0.35,
+    transpose_semitones: int = 0,
     play: bool = False,
 ) -> SynthResult:
     with open(tabs_path, 'r', encoding='utf-8') as f:
@@ -153,5 +193,8 @@ def synthesize_from_tabs_file(
         sample_rate=sample_rate,
         step_seconds=step_seconds,
         note_seconds=note_seconds,
+        decay=decay,
+        gain=gain,
+        transpose_semitones=transpose_semitones,
         play=play,
     )

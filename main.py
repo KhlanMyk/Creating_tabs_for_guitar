@@ -7,6 +7,7 @@ from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
+from synth_matcher import optimize_synth_against_original
 from tab_synth import synthesize_from_tabs_file
 
 
@@ -37,6 +38,11 @@ def main():
     parser.add_argument("--synth-tabs", type=str, help="Path to tabs txt for audio synthesis")
     parser.add_argument("--synth-output", type=str, default="tabs_synth.wav", help="Output wav path")
     parser.add_argument("--play-synth", action="store_true", help="Play synthesized tabs audio")
+    parser.add_argument(
+        "--match-original",
+        type=str,
+        help="Path to original audio file for synth parameter matching",
+    )
     args = parser.parse_args()
 
     if args.gui:
@@ -64,6 +70,22 @@ def main():
         return
 
     if args.synth_tabs:
+        if args.match_original:
+            with open(args.synth_tabs, "r", encoding="utf-8") as f:
+                tabs_text = f.read()
+            match = optimize_synth_against_original(
+                tabs_text=tabs_text,
+                original_audio_path=args.match_original,
+                output_path=args.synth_output,
+            )
+            print(
+                "Matched synth complete: "
+                f"score={match.score:.4f}, "
+                f"params={match.params}, "
+                f"output={match.output_path}"
+            )
+            return
+
         result = synthesize_from_tabs_file(
             tabs_path=args.synth_tabs,
             output_path=args.synth_output,
