@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, scrolledtext
 from audio_processor import AudioProcessor
 from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
+from synth_matcher import optimize_synth_against_original
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
 from tab_synth import synthesize_from_tabs_text
@@ -61,6 +62,7 @@ class GuitarTabApp(tk.Tk):
         tk.Button(control_frame, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Render Guitar Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=5)
+        tk.Button(control_frame, text="Match Original", command=self.on_match_original).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=5)
 
         self.status_var = tk.StringVar(value="Ready")
@@ -252,6 +254,47 @@ class GuitarTabApp(tk.Tk):
                 )
             except Exception as exc:
                 self.set_status("Audio render failed")
+                messagebox.showerror("Error", str(exc))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def on_match_original(self):
+        tabs_text = self.output.get("1.0", tk.END).strip()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+
+        original_path = filedialog.askopenfilename(
+            title="Select original audio file",
+            filetypes=[
+                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not original_path:
+            return
+
+        out_path = filedialog.asksaveasfilename(
+            title="Save matched synthesized audio",
+            defaultextension=".wav",
+            filetypes=[("WAV audio", "*.wav")],
+        )
+        if not out_path:
+            return
+
+        def task():
+            self.set_status("Matching synth to original (this may take a while)...")
+            try:
+                result = optimize_synth_against_original(
+                    tabs_text=tabs_text,
+                    original_audio_path=original_path,
+                    output_path=out_path,
+                )
+                self.set_status(
+                    f"Matched: score={result.score:.4f}, params={result.params}"
+                )
+            except Exception as exc:
+                self.set_status("Match failed")
                 messagebox.showerror("Error", str(exc))
 
         threading.Thread(target=task, daemon=True).start()

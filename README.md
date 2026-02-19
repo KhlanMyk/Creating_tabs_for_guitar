@@ -32,6 +32,7 @@ python main.py --min-duration 0.08 --min-voiced-prob 0.8 --max-fret 12
 python main.py --input song.mp3 --use-harmonic --segment-seconds 15
 python main.py --input song.mp3 --auto-tune --output tabs.txt
 python main.py --synth-tabs tabs.txt --synth-output tabs_synth.wav --play-synth
+python main.py --synth-tabs tabs.txt --match-original song.mp3 --synth-output tabs_synth_matched.wav
 python main.py --test
 ```
 
@@ -44,6 +45,7 @@ python main.py --gui
 The GUI includes a **Run Test** button to verify detection on a 440 Hz sine wave.
 Use **Best Quality** in GUI to auto-pick extraction parameters for the current audio.
 Use **Render Guitar Audio** to synthesize and play guitar-like sound from generated tabs.
+Use **Match Original** to optimize synthesis parameters so the rendered tabs sound closer to a selected source track.
 
 Follow the on-screen menu to record from microphone or load an audio file, then optionally save the generated tabs.
 
@@ -67,6 +69,7 @@ python main.py --gui
 - `pitch_detector.py` - pitch detection and note extraction
 - `tab_generator.py` - tab generation
 - `gui_app.py` - Tkinter GUI
+- `synth_matcher.py` - synth-vs-original similarity matching and optimization
 - `self_test.py` - sine wave self-test
 - `requirements.txt` - dependencies
 
