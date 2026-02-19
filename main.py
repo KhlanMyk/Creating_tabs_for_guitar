@@ -8,6 +8,7 @@ from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
 from synth_matcher import optimize_synth_against_original
+from tab_refiner import refine_tabs_with_original
 from tab_synth import synthesize_from_tabs_file
 
 
@@ -43,6 +44,17 @@ def main():
         type=str,
         help="Path to original audio file for synth parameter matching",
     )
+    parser.add_argument(
+        "--refine-tabs-with-original",
+        type=str,
+        help="Path to original audio file for tab fret refinement",
+    )
+    parser.add_argument(
+        "--refined-tabs-output",
+        type=str,
+        default="tabs_refined.txt",
+        help="Output path for refined tabs text",
+    )
     args = parser.parse_args()
 
     if args.gui:
@@ -70,8 +82,29 @@ def main():
         return
 
     if args.synth_tabs:
+        tabs_path = args.synth_tabs
+
+        if args.refine_tabs_with_original:
+            with open(tabs_path, "r", encoding="utf-8") as f:
+                tabs_text = f.read()
+
+            refined = refine_tabs_with_original(
+                tabs_text=tabs_text,
+                original_audio_path=args.refine_tabs_with_original,
+            )
+            with open(args.refined_tabs_output, "w", encoding="utf-8") as f:
+                f.write(refined.refined_tabs_text)
+
+            tabs_path = args.refined_tabs_output
+            print(
+                "Tabs refined: "
+                f"changes={refined.changes_count}, "
+                f"estimated_step={refined.estimated_step_seconds:.3f}s, "
+                f"output={tabs_path}"
+            )
+
         if args.match_original:
-            with open(args.synth_tabs, "r", encoding="utf-8") as f:
+            with open(tabs_path, "r", encoding="utf-8") as f:
                 tabs_text = f.read()
             match = optimize_synth_against_original(
                 tabs_text=tabs_text,
@@ -87,7 +120,7 @@ def main():
             return
 
         result = synthesize_from_tabs_file(
-            tabs_path=args.synth_tabs,
+            tabs_path=tabs_path,
             output_path=args.synth_output,
             play=args.play_synth,
         )
