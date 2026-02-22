@@ -34,6 +34,7 @@ python main.py --input song.mp3 --auto-tune --output tabs.txt
 python main.py --synth-tabs tabs.txt --synth-output tabs_synth.wav --play-synth
 python main.py --synth-tabs tabs.txt --match-original song.mp3 --synth-output tabs_synth_matched.wav
 python main.py --synth-tabs tabs.txt --refine-tabs-with-original song.mp3 --refined-tabs-output tabs_refined.txt --match-original song.mp3 --synth-output tabs_synth_refined_matched.wav
+python main.py --synth-tabs tabs_refined_rhythm.txt --check-tabs-with-original song.mp3
 python main.py --test
 ```
 

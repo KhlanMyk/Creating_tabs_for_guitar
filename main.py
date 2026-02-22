@@ -8,6 +8,7 @@ from pitch_detector import PitchDetector
 from tab_generator import GuitarTabGenerator
 from self_test import run_sine_test
 from synth_matcher import optimize_synth_against_original
+from tab_checker import check_tabs_against_original
 from tab_refiner import refine_tabs_with_original
 from tab_synth import synthesize_from_tabs_file
 
@@ -54,6 +55,11 @@ def main():
         type=str,
         default="tabs_refined.txt",
         help="Output path for refined tabs text",
+    )
+    parser.add_argument(
+        "--check-tabs-with-original",
+        type=str,
+        help="Path to original audio file to check tabs quality",
     )
     args = parser.parse_args()
 
@@ -119,6 +125,22 @@ def main():
                 f"params={match.params}, "
                 f"output={match.output_path}"
             )
+            return
+
+        if args.check_tabs_with_original:
+            with open(tabs_path, "r", encoding="utf-8") as f:
+                tabs_text = f.read()
+            check = check_tabs_against_original(
+                tabs_text=tabs_text,
+                original_audio_path=args.check_tabs_with_original,
+            )
+            print("Tabs check complete:")
+            print(f"  overall_score={check.overall_score:.4f}")
+            print(f"  chroma_score={check.chroma_score:.4f}")
+            print(f"  onset_score={check.onset_score:.4f}")
+            print(f"  estimated_step_seconds={check.estimated_step_seconds:.3f}")
+            print(f"  estimated_note_seconds={check.estimated_note_seconds:.3f}")
+            print(f"  analyzed_seconds={check.analyzed_seconds:.2f}")
             return
 
         result = synthesize_from_tabs_file(

@@ -78,7 +78,8 @@ def parse_tabs_text(tab_text: str) -> Tuple[List[List[str]], int]:
     for ln in string_lines[:6]:
         # Extract only numbers and rests from the body
         body = ln.split('|', 1)[1].rsplit('|', 1)[0] if '|' in ln else ln
-        tokens = re.findall(r'--|\d+', body)
+        tokens = re.findall(r'--|-|\d+', body)
+        tokens = ['--' if t == '-' else t for t in tokens]
         parsed.append(tokens)
         max_cols = max(max_cols, len(tokens))
 
