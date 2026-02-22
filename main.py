@@ -83,6 +83,7 @@ def main():
 
     if args.synth_tabs:
         tabs_path = args.synth_tabs
+        refined_step_seconds = None
 
         if args.refine_tabs_with_original:
             with open(tabs_path, "r", encoding="utf-8") as f:
@@ -96,6 +97,7 @@ def main():
                 f.write(refined.refined_tabs_text)
 
             tabs_path = args.refined_tabs_output
+            refined_step_seconds = refined.estimated_step_seconds
             print(
                 "Tabs refined: "
                 f"changes={refined.changes_count}, "
@@ -122,6 +124,7 @@ def main():
         result = synthesize_from_tabs_file(
             tabs_path=tabs_path,
             output_path=args.synth_output,
+            step_seconds=refined_step_seconds if refined_step_seconds else 0.14,
             play=args.play_synth,
         )
         print(

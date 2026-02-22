@@ -76,6 +76,31 @@ def _closest_refined_fret(
     return best_fret
 
 
+def _detect_onsets(audio: np.ndarray, sr: int) -> np.ndarray:
+    onset_frames = librosa.onset.onset_detect(
+        y=audio,
+        sr=sr,
+        hop_length=512,
+        backtrack=True,
+        units="frames",
+    )
+    if onset_frames.size == 0:
+        return np.array([], dtype=np.float32)
+    return librosa.frames_to_time(onset_frames, sr=sr, hop_length=512).astype(np.float32)
+
+
+def _expand_grid_by_units(grid: list[list[str]], cols: int, units: np.ndarray) -> tuple[list[list[str]], int]:
+    expanded = [[] for _ in range(6)]
+    for c in range(cols):
+        u = int(max(1, units[c]))
+        for row in range(6):
+            token = grid[row][c]
+            expanded[row].append(token)
+            if u > 1:
+                expanded[row].extend(["--"] * (u - 1))
+    return expanded, len(expanded[0]) if expanded else 0
+
+
 def refine_tabs_with_original(
     tabs_text: str,
     original_audio_path: str,
@@ -134,9 +159,30 @@ def refine_tabs_with_original(
                     grid[row][c] = str(new_fret)
                     changes += 1
 
+    onsets = _detect_onsets(audio, sr)
+
+    estimated_step = step
+    if len(onsets) >= 4:
+        timeline = np.interp(
+            np.linspace(0, len(onsets) - 1, cols + 1),
+            np.arange(len(onsets)),
+            onsets,
+        )
+        timeline = np.maximum.accumulate(timeline)
+        intervals = np.diff(timeline)
+        positive = intervals[intervals > 1e-4]
+        fallback_interval = float(np.median(positive)) if positive.size else step
+        intervals = np.where(intervals > 1e-4, intervals, fallback_interval)
+
+        median_step = float(np.median(intervals))
+        estimated_step = float(np.clip(median_step, 0.08, 0.22))
+
+        units = np.clip(np.rint(intervals / max(estimated_step, 1e-6)).astype(int), 1, 6)
+        grid, cols = _expand_grid_by_units(grid, cols, units)
+
     refined_text = _format_tabs_from_grid(grid, cols)
     return RefineTabsResult(
         refined_tabs_text=refined_text,
         changes_count=changes,
-        estimated_step_seconds=step,
+        estimated_step_seconds=estimated_step,
     )
