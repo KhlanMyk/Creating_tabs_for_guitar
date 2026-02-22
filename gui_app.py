@@ -7,7 +7,9 @@ from audio_processor import AudioProcessor
 from auto_tune import find_best_extraction
 from pitch_detector import PitchDetector
 from synth_matcher import optimize_synth_against_original
+from tab_checker import check_tabs_against_original
 from tab_generator import GuitarTabGenerator
+from tab_refiner import refine_tabs_with_original
 from self_test import run_sine_test
 from tab_synth import synthesize_from_tabs_text
 
@@ -62,6 +64,8 @@ class GuitarTabApp(tk.Tk):
         tk.Button(control_frame, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Render Guitar Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=5)
+        tk.Button(control_frame, text="Refine w/ Original", command=self.on_refine_with_original).pack(side=tk.LEFT, padx=5)
+        tk.Button(control_frame, text="Check Tabs", command=self.on_check_tabs).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Match Original", command=self.on_match_original).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=5)
 
@@ -215,7 +219,8 @@ class GuitarTabApp(tk.Tk):
         threading.Thread(target=task, daemon=True).start()
 
     def on_save(self):
-        if not self.output.get("1.0", tk.END).strip():
+        tabs_text = self.output.get("1.0", tk.END).strip()
+        if not tabs_text:
             messagebox.showwarning("No tabs", "Generate tabs first.")
             return
         file_path = filedialog.asksaveasfilename(
@@ -226,10 +231,91 @@ class GuitarTabApp(tk.Tk):
         if not file_path:
             return
         try:
-            self.tab_gen.save_tabs_to_file(file_path)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(tabs_text)
             self.set_status("Tabs saved")
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
+
+    def on_refine_with_original(self):
+        tabs_text = self.output.get("1.0", tk.END).strip()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+
+        original_path = filedialog.askopenfilename(
+            title="Select original audio file",
+            filetypes=[
+                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not original_path:
+            return
+
+        def task():
+            self.set_status("Refining tabs with original audio...")
+            try:
+                result = refine_tabs_with_original(
+                    tabs_text=tabs_text,
+                    original_audio_path=original_path,
+                )
+                self.output.delete("1.0", tk.END)
+                self.output.insert(tk.END, result.refined_tabs_text)
+                self.set_status(
+                    f"Refined: changes={result.changes_count}, step={result.estimated_step_seconds:.3f}s"
+                )
+            except Exception as exc:
+                self.set_status("Refine failed")
+                messagebox.showerror("Error", str(exc))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def on_check_tabs(self):
+        tabs_text = self.output.get("1.0", tk.END).strip()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+
+        original_path = filedialog.askopenfilename(
+            title="Select original audio file",
+            filetypes=[
+                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not original_path:
+            return
+
+        def task():
+            self.set_status("Checking tabs against original...")
+            try:
+                result = check_tabs_against_original(
+                    tabs_text=tabs_text,
+                    original_audio_path=original_path,
+                )
+                self.set_status(
+                    f"Checked: overall={result.overall_score:.4f}, "
+                    f"chroma={result.chroma_score:.4f}, onset={result.onset_score:.4f}"
+                )
+                messagebox.showinfo(
+                    "Tabs Check",
+                    "\n".join(
+                        [
+                            f"Overall score: {result.overall_score:.4f}",
+                            f"Chroma score: {result.chroma_score:.4f}",
+                            f"Onset score: {result.onset_score:.4f}",
+                            f"Estimated step: {result.estimated_step_seconds:.3f}s",
+                            f"Estimated note: {result.estimated_note_seconds:.3f}s",
+                            f"Analyzed seconds: {result.analyzed_seconds:.2f}",
+                        ]
+                    ),
+                )
+            except Exception as exc:
+                self.set_status("Check failed")
+                messagebox.showerror("Error", str(exc))
+
+        threading.Thread(target=task, daemon=True).start()
 
     def on_render_audio(self):
         tabs_text = self.output.get("1.0", tk.END).strip()
