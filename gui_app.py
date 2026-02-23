@@ -120,22 +120,41 @@ class GuitarTabApp(tk.Tk):
         actions_frame = ttk.Frame(control_frame, style="Panel.TFrame")
         actions_frame.pack(side=tk.LEFT, padx=16, pady=12)
 
-        row1 = ttk.Frame(actions_frame, style="Panel.TFrame")
-        row1.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(row1, text="Record", command=self.on_record).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row1, text="Load File", command=self.on_load).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row1, text="Load + Generate", command=self.on_load_and_generate).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row1, text="Analyze", command=self.on_analyze, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
-        ttk.Button(row1, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=4)
+        input_frame = ttk.LabelFrame(actions_frame, text="Input", padding=10)
+        input_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(input_frame, text="🎙 Record", command=self.on_record).pack(side=tk.LEFT, padx=4)
+        ttk.Button(input_frame, text="📂 Load File", command=self.on_load).pack(side=tk.LEFT, padx=4)
+        ttk.Button(input_frame, text="⚡ Load + Generate", command=self.on_load_and_generate).pack(
+            side=tk.LEFT, padx=4
+        )
 
-        row2 = ttk.Frame(actions_frame, style="Panel.TFrame")
-        row2.pack(fill=tk.X)
-        ttk.Button(row2, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row2, text="Render Guitar Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row2, text="Refine w/ Original", command=self.on_refine_with_original).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row2, text="Check Tabs", command=self.on_check_tabs).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row2, text="Match Original", command=self.on_match_original).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row2, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=4)
+        process_frame = ttk.LabelFrame(actions_frame, text="Process", padding=10)
+        process_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(process_frame, text="🧠 Analyze", command=self.on_analyze, style="Accent.TButton").pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Button(process_frame, text="✨ Best Quality", command=self.on_best_quality).pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Button(process_frame, text="🛠 Refine w/ Original", command=self.on_refine_with_original).pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Button(process_frame, text="🧪 Check Tabs", command=self.on_check_tabs).pack(
+            side=tk.LEFT, padx=4
+        )
+
+        output_frame = ttk.LabelFrame(actions_frame, text="Output", padding=10)
+        output_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(output_frame, text="💾 Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=4)
+        ttk.Button(output_frame, text="🔊 Render Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=4)
+        ttk.Button(output_frame, text="🎧 Match Original", command=self.on_match_original).pack(
+            side=tk.LEFT, padx=4
+        )
+
+        utils_frame = ttk.LabelFrame(actions_frame, text="Utilities", padding=10)
+        utils_frame.pack(fill=tk.X)
+        ttk.Button(utils_frame, text="🧪 Run Test", command=self.on_test).pack(side=tk.LEFT, padx=4)
+        ttk.Button(utils_frame, text="❓ Help", command=self.on_help).pack(side=tk.LEFT, padx=4)
 
         self.status_var = tk.StringVar(value="Ready")
         status_bar = ttk.Frame(self, style="Panel.TFrame")
@@ -153,6 +172,25 @@ class GuitarTabApp(tk.Tk):
             font=("Menlo", 12),
         )
         self.output.pack(fill=tk.BOTH, expand=True, padx=16, pady=(8, 16))
+
+    def on_help(self):
+        messagebox.showinfo(
+            "Help",
+            "\n".join(
+                [
+                    "Quick start:",
+                    "1) Record or Load File",
+                    "2) Analyze to generate tabs",
+                    "3) Save Tabs or Render Audio",
+                    "",
+                    "Improve accuracy:",
+                    "• Best Quality: auto-tunes extraction parameters",
+                    "• Refine w/ Original: correct frets and timing",
+                    "• Check Tabs: objective similarity scores",
+                    "• Match Original: optimizes synth parameters",
+                ]
+            ),
+        )
 
     def set_status(self, text: str):
         self.status_var.set(text)
