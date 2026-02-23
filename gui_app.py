@@ -1,7 +1,7 @@
 """Tkinter GUI for Guitar Tab Generator."""
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from audio_processor import AudioProcessor
 from auto_tune import find_best_extraction
@@ -20,7 +20,10 @@ class GuitarTabApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Guitar Tab Generator")
-        self.geometry("900x600")
+        self.geometry("1100x700")
+        self.minsize(980, 620)
+
+        self._apply_theme()
 
         self.audio_proc = AudioProcessor()
         self.pitch_det = PitchDetector()
@@ -30,50 +33,126 @@ class GuitarTabApp(tk.Tk):
 
         self._build_ui()
 
+    def _apply_theme(self):
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        bg = "#0f172a"  # slate-900
+        panel = "#111827"  # gray-900
+        accent = "#38bdf8"  # sky-400
+        text = "#e2e8f0"  # slate-200
+        muted = "#94a3b8"  # slate-400
+
+        self.configure(background=bg)
+        style.configure("TFrame", background=bg)
+        style.configure("Panel.TFrame", background=panel)
+        style.configure("TLabel", background=bg, foreground=text)
+        style.configure("Muted.TLabel", background=bg, foreground=muted)
+        style.configure(
+            "TButton",
+            background=panel,
+            foreground=text,
+            padding=(10, 6),
+            focusthickness=3,
+            focuscolor=accent,
+        )
+        style.map(
+            "TButton",
+            background=[("active", "#1f2937"), ("pressed", "#0b1220")],
+            foreground=[("active", "#ffffff")],
+        )
+        style.configure("Accent.TButton", background=accent, foreground="#0b1120")
+        style.map(
+            "Accent.TButton",
+            background=[("active", "#7dd3fc"), ("pressed", "#0ea5e9")],
+            foreground=[("active", "#0b1120")],
+        )
+        style.configure("TEntry", fieldbackground="#0b1220", foreground=text)
+        style.configure("TCheckbutton", background=bg, foreground=text)
+
     def _build_ui(self):
-        control_frame = tk.Frame(self)
-        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        header = ttk.Frame(self)
+        header.pack(fill=tk.X, padx=16, pady=(16, 8))
 
-        tk.Label(control_frame, text="Duration (sec):").pack(side=tk.LEFT)
+        title = ttk.Label(header, text="Guitar Tab Generator", font=("Helvetica", 18, "bold"))
+        title.pack(side=tk.LEFT)
+        subtitle = ttk.Label(
+            header,
+            text="Audio → Tabs → Synth + Match",
+            style="Muted.TLabel",
+        )
+        subtitle.pack(side=tk.LEFT, padx=(12, 0), pady=(6, 0))
+
+        control_frame = ttk.Frame(self, style="Panel.TFrame")
+        control_frame.pack(fill=tk.X, padx=16, pady=8)
+
+        params_frame = ttk.Frame(control_frame, style="Panel.TFrame")
+        params_frame.pack(side=tk.LEFT, padx=12, pady=12)
+
+        ttk.Label(params_frame, text="Duration (sec):").grid(row=0, column=0, sticky="w")
         self.duration_var = tk.StringVar(value="5")
-        tk.Entry(control_frame, textvariable=self.duration_var, width=6).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(params_frame, textvariable=self.duration_var, width=7).grid(row=0, column=1, padx=6)
 
-        tk.Label(control_frame, text="Min duration:").pack(side=tk.LEFT)
+        ttk.Label(params_frame, text="Min duration:").grid(row=0, column=2, sticky="w")
         self.min_duration_var = tk.StringVar(value="0.1")
-        tk.Entry(control_frame, textvariable=self.min_duration_var, width=6).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(params_frame, textvariable=self.min_duration_var, width=7).grid(row=0, column=3, padx=6)
 
-        tk.Label(control_frame, text="Min voiced prob:").pack(side=tk.LEFT)
+        ttk.Label(params_frame, text="Min voiced prob:").grid(row=0, column=4, sticky="w")
         self.min_voiced_var = tk.StringVar(value="0.75")
-        tk.Entry(control_frame, textvariable=self.min_voiced_var, width=6).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(params_frame, textvariable=self.min_voiced_var, width=7).grid(row=0, column=5, padx=6)
 
-        tk.Label(control_frame, text="Max fret:").pack(side=tk.LEFT)
+        ttk.Label(params_frame, text="Max fret:").grid(row=1, column=0, sticky="w", pady=(8, 0))
         self.max_fret_var = tk.StringVar(value="15")
-        tk.Entry(control_frame, textvariable=self.max_fret_var, width=4).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(params_frame, textvariable=self.max_fret_var, width=7).grid(row=1, column=1, padx=6, pady=(8, 0))
 
-        tk.Label(control_frame, text="Segment (sec):").pack(side=tk.LEFT)
+        ttk.Label(params_frame, text="Segment (sec):").grid(row=1, column=2, sticky="w", pady=(8, 0))
         self.segment_var = tk.StringVar(value="15")
-        tk.Entry(control_frame, textvariable=self.segment_var, width=5).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(params_frame, textvariable=self.segment_var, width=7).grid(row=1, column=3, padx=6, pady=(8, 0))
 
         self.use_harmonic_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(control_frame, text="Use harmonic", variable=self.use_harmonic_var).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(params_frame, text="Use harmonic", variable=self.use_harmonic_var).grid(
+            row=1, column=4, columnspan=2, sticky="w", padx=6, pady=(8, 0)
+        )
 
-        tk.Button(control_frame, text="Record", command=self.on_record).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Load File", command=self.on_load).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Load + Generate", command=self.on_load_and_generate).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Analyze", command=self.on_analyze).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Render Guitar Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Refine w/ Original", command=self.on_refine_with_original).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Check Tabs", command=self.on_check_tabs).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Match Original", command=self.on_match_original).pack(side=tk.LEFT, padx=5)
-        tk.Button(control_frame, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=5)
+        actions_frame = ttk.Frame(control_frame, style="Panel.TFrame")
+        actions_frame.pack(side=tk.LEFT, padx=16, pady=12)
+
+        row1 = ttk.Frame(actions_frame, style="Panel.TFrame")
+        row1.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(row1, text="Record", command=self.on_record).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row1, text="Load File", command=self.on_load).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row1, text="Load + Generate", command=self.on_load_and_generate).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row1, text="Analyze", command=self.on_analyze, style="Accent.TButton").pack(side=tk.LEFT, padx=4)
+        ttk.Button(row1, text="Best Quality", command=self.on_best_quality).pack(side=tk.LEFT, padx=4)
+
+        row2 = ttk.Frame(actions_frame, style="Panel.TFrame")
+        row2.pack(fill=tk.X)
+        ttk.Button(row2, text="Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row2, text="Render Guitar Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row2, text="Refine w/ Original", command=self.on_refine_with_original).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row2, text="Check Tabs", command=self.on_check_tabs).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row2, text="Match Original", command=self.on_match_original).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row2, text="Run Test", command=self.on_test).pack(side=tk.LEFT, padx=4)
 
         self.status_var = tk.StringVar(value="Ready")
-        tk.Label(self, textvariable=self.status_var, anchor="w").pack(fill=tk.X, padx=10)
+        status_bar = ttk.Frame(self, style="Panel.TFrame")
+        status_bar.pack(fill=tk.X, padx=16, pady=(4, 0))
+        ttk.Label(status_bar, textvariable=self.status_var, anchor="w").pack(
+            fill=tk.X, padx=10, pady=6
+        )
 
-        self.output = scrolledtext.ScrolledText(self, wrap=tk.WORD)
-        self.output.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.output = scrolledtext.ScrolledText(
+            self,
+            wrap=tk.WORD,
+            background="#0b1220",
+            foreground="#e2e8f0",
+            insertbackground="#e2e8f0",
+            font=("Menlo", 12),
+        )
+        self.output.pack(fill=tk.BOTH, expand=True, padx=16, pady=(8, 16))
 
     def set_status(self, text: str):
         self.status_var.set(text)
