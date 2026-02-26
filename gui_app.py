@@ -1,7 +1,10 @@
-"""Tkinter GUI for Guitar Tab Generator."""
+"""Premium Tkinter GUI for Guitar Tab Generator."""
+from __future__ import annotations
+
+import os
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, ttk, font as tkfont
 
 from audio_processor import AudioProcessor
 from auto_tune import find_best_extraction
@@ -14,257 +17,331 @@ from self_test import run_sine_test
 from tab_synth import synthesize_from_tabs_text
 
 
+# ── colour palette ──────────────────────────────────────
+BG          = "#0f0f0f"
+SIDEBAR_BG  = "#1a1a2e"
+CARD_BG     = "#16213e"
+ACCENT      = "#e94560"
+ACCENT_HOVER = "#ff6b81"
+TEXT        = "#eaeaea"
+MUTED       = "#8892b0"
+TAB_BG      = "#0a0a14"
+TAB_FG      = "#c8d6e5"
+TAB_ACCENT  = "#feca57"
+ENTRY_BG    = "#10163a"
+BORDER      = "#233554"
+SUCCESS     = "#55efc4"
+WARN        = "#f6b93b"
+
+
 class GuitarTabApp(tk.Tk):
-    """Simple GUI app for generating guitar tabs."""
+    """Redesigned premium GUI for generating guitar tabs."""
 
     def __init__(self):
         super().__init__()
         self.title("Guitar Tab Generator")
-        self.geometry("1100x700")
-        self.minsize(980, 620)
-
-        self._apply_theme()
+        self.geometry("1280x800")
+        self.minsize(1060, 680)
+        self.configure(bg=BG)
 
         self.audio_proc = AudioProcessor()
         self.pitch_det = PitchDetector()
         self.tab_gen = GuitarTabGenerator()
-
         self.audio_data = None
+        self._loaded_path: str | None = None
 
+        self._setup_styles()
         self._build_ui()
 
-    def _apply_theme(self):
-        style = ttk.Style(self)
+    # ── styles ──────────────────────────────────────────
+    def _setup_styles(self):
+        s = ttk.Style(self)
         try:
-            style.theme_use("clam")
+            s.theme_use("clam")
         except Exception:
             pass
 
-        bg = "#0f172a"  # slate-900
-        panel = "#111827"  # gray-900
-        accent = "#38bdf8"  # sky-400
-        text = "#e2e8f0"  # slate-200
-        muted = "#94a3b8"  # slate-400
+        s.configure("Sidebar.TFrame", background=SIDEBAR_BG)
+        s.configure("Card.TFrame", background=CARD_BG)
+        s.configure("TFrame", background=BG)
+        s.configure("TLabel", background=BG, foreground=TEXT)
+        s.configure("Sidebar.TLabel", background=SIDEBAR_BG, foreground=TEXT)
+        s.configure("Muted.TLabel", background=BG, foreground=MUTED)
+        s.configure("Card.TLabel", background=CARD_BG, foreground=TEXT)
+        s.configure("TEntry", fieldbackground=ENTRY_BG, foreground=TEXT)
+        s.configure("TCheckbutton", background=CARD_BG, foreground=TEXT)
 
-        self.configure(background=bg)
-        style.configure("TFrame", background=bg)
-        style.configure("Panel.TFrame", background=panel)
-        style.configure("TLabel", background=bg, foreground=text)
-        style.configure("Muted.TLabel", background=bg, foreground=muted)
-        style.configure(
-            "TButton",
-            background=panel,
-            foreground=text,
-            padding=(10, 6),
-            focusthickness=3,
-            focuscolor=accent,
-        )
-        style.map(
-            "TButton",
-            background=[("active", "#1f2937"), ("pressed", "#0b1220")],
-            foreground=[("active", "#ffffff")],
-        )
-        style.configure("Accent.TButton", background=accent, foreground="#0b1120")
-        style.map(
-            "Accent.TButton",
-            background=[("active", "#7dd3fc"), ("pressed", "#0ea5e9")],
-            foreground=[("active", "#0b1120")],
-        )
-        style.configure("TEntry", fieldbackground="#0b1220", foreground=text)
-        style.configure("TCheckbutton", background=bg, foreground=text)
-
+    # ── layout ──────────────────────────────────────────
     def _build_ui(self):
-        header = ttk.Frame(self)
-        header.pack(fill=tk.X, padx=16, pady=(16, 8))
+        # ── sidebar ─────────────────────────────────────
+        sidebar = tk.Frame(self, bg=SIDEBAR_BG, width=260)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar.pack_propagate(False)
 
-        title = ttk.Label(header, text="Guitar Tab Generator", font=("Helvetica", 18, "bold"))
-        title.pack(side=tk.LEFT)
-        subtitle = ttk.Label(
-            header,
-            text="Audio → Tabs → Synth + Match",
-            style="Muted.TLabel",
-        )
-        subtitle.pack(side=tk.LEFT, padx=(12, 0), pady=(6, 0))
+        # logo area
+        logo_frame = tk.Frame(sidebar, bg=SIDEBAR_BG)
+        logo_frame.pack(fill=tk.X, padx=20, pady=(24, 16))
+        tk.Label(logo_frame, text="Guitar Tab", font=("Helvetica", 17, "bold"),
+                 fg=TEXT, bg=SIDEBAR_BG).pack(anchor="w")
+        tk.Label(logo_frame, text="Generator", font=("Helvetica", 17),
+                 fg=MUTED, bg=SIDEBAR_BG).pack(anchor="w")
 
-        control_frame = ttk.Frame(self, style="Panel.TFrame")
-        control_frame.pack(fill=tk.X, padx=16, pady=8)
+        self._sep(sidebar)
 
-        params_frame = ttk.Frame(control_frame, style="Panel.TFrame")
-        params_frame.pack(side=tk.LEFT, padx=12, pady=12)
+        # ── Input section ───
+        self._section_label(sidebar, "INPUT")
+        self._sidebar_btn(sidebar, "Load Audio",          self.on_load,              CARD_BG)
+        self._sidebar_btn(sidebar, "Record Mic",          self.on_record,            CARD_BG)
 
-        ttk.Label(params_frame, text="Duration (sec):").grid(row=0, column=0, sticky="w")
-        self.duration_var = tk.StringVar(value="5")
-        ttk.Entry(params_frame, textvariable=self.duration_var, width=7).grid(row=0, column=1, padx=6)
+        self._sep(sidebar)
 
-        ttk.Label(params_frame, text="Min duration:").grid(row=0, column=2, sticky="w")
-        self.min_duration_var = tk.StringVar(value="0.1")
-        ttk.Entry(params_frame, textvariable=self.min_duration_var, width=7).grid(row=0, column=3, padx=6)
+        # ── Process section ───
+        self._section_label(sidebar, "PROCESS")
+        self._sidebar_btn(sidebar, "Analyze",              self.on_analyze,           ACCENT)
+        self._sidebar_btn(sidebar, "Best Quality",         self.on_best_quality,      CARD_BG)
+        self._sidebar_btn(sidebar, "Refine w/ Original",   self.on_refine_with_original, CARD_BG)
 
-        ttk.Label(params_frame, text="Min voiced prob:").grid(row=0, column=4, sticky="w")
-        self.min_voiced_var = tk.StringVar(value="0.75")
-        ttk.Entry(params_frame, textvariable=self.min_voiced_var, width=7).grid(row=0, column=5, padx=6)
+        self._sep(sidebar)
 
-        ttk.Label(params_frame, text="Max fret:").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self.max_fret_var = tk.StringVar(value="15")
-        ttk.Entry(params_frame, textvariable=self.max_fret_var, width=7).grid(row=1, column=1, padx=6, pady=(8, 0))
+        # ── Output section ───
+        self._section_label(sidebar, "OUTPUT")
+        self._sidebar_btn(sidebar, "Render Audio",         self.on_render_audio,      CARD_BG)
+        self._sidebar_btn(sidebar, "Match Original",       self.on_match_original,    CARD_BG)
+        self._sidebar_btn(sidebar, "Check Tabs",           self.on_check_tabs,        CARD_BG)
+        self._sidebar_btn(sidebar, "Save Tabs",            self.on_save,              CARD_BG)
 
-        ttk.Label(params_frame, text="Segment (sec):").grid(row=1, column=2, sticky="w", pady=(8, 0))
-        self.segment_var = tk.StringVar(value="15")
-        ttk.Entry(params_frame, textvariable=self.segment_var, width=7).grid(row=1, column=3, padx=6, pady=(8, 0))
+        self._sep(sidebar)
+        self._sidebar_btn(sidebar, "Help",                 self.on_help,              CARD_BG)
+
+        # spacer
+        tk.Frame(sidebar, bg=SIDEBAR_BG).pack(fill=tk.BOTH, expand=True)
+
+        # status footer
+        self.status_var = tk.StringVar(value="Ready")
+        status_frame = tk.Frame(sidebar, bg="#0d1025")
+        status_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        tk.Label(status_frame, textvariable=self.status_var, fg=SUCCESS, bg="#0d1025",
+                 font=("Helvetica", 10), anchor="w", wraplength=240).pack(padx=16, pady=12)
+
+        # ── main content ────────────────────────────────
+        main = tk.Frame(self, bg=BG)
+        main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # top bar with params
+        topbar = tk.Frame(main, bg=CARD_BG, highlightbackground=BORDER, highlightthickness=1)
+        topbar.pack(fill=tk.X, padx=20, pady=(16, 0))
+
+        self._param_entries = {}
+        params = [
+            ("Duration (s)", "duration", "5"),
+            ("Min dur", "min_dur", "0.1"),
+            ("Voiced prob", "voiced", "0.75"),
+            ("Max fret", "fret", "15"),
+            ("Segment (s)", "segment", "15"),
+        ]
+        for i, (label, key, default) in enumerate(params):
+            tk.Label(topbar, text=label, fg=MUTED, bg=CARD_BG,
+                     font=("Helvetica", 10)).grid(row=0, column=i*2, padx=(16 if i==0 else 8, 4), pady=12, sticky="w")
+            var = tk.StringVar(value=default)
+            e = tk.Entry(topbar, textvariable=var, width=7, bg=ENTRY_BG, fg=TEXT,
+                         insertbackground=TEXT, relief="flat", font=("Menlo", 11),
+                         highlightbackground=BORDER, highlightthickness=1)
+            e.grid(row=0, column=i*2+1, padx=(0, 8), pady=12)
+            self._param_entries[key] = var
 
         self.use_harmonic_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(params_frame, text="Use harmonic", variable=self.use_harmonic_var).grid(
-            row=1, column=4, columnspan=2, sticky="w", padx=6, pady=(8, 0)
+        cb = tk.Checkbutton(topbar, text="Harmonic", variable=self.use_harmonic_var,
+                            bg=CARD_BG, fg=TEXT, selectcolor=ENTRY_BG, activebackground=CARD_BG,
+                            activeforeground=TEXT, font=("Helvetica", 10))
+        cb.grid(row=0, column=len(params)*2, padx=12, pady=12)
+
+        # file info bar
+        self.file_info_var = tk.StringVar(value="No audio loaded")
+        info_bar = tk.Frame(main, bg=BG)
+        info_bar.pack(fill=tk.X, padx=20, pady=(10, 0))
+        tk.Label(info_bar, textvariable=self.file_info_var, fg=MUTED, bg=BG,
+                 font=("Helvetica", 11)).pack(side=tk.LEFT)
+
+        # ── tab display (canvas with scrollbar) ─────────
+        tab_frame = tk.Frame(main, bg=TAB_BG, highlightbackground=BORDER, highlightthickness=1)
+        tab_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 20))
+
+        self.tab_canvas = tk.Canvas(tab_frame, bg=TAB_BG, highlightthickness=0)
+        sb_y = ttk.Scrollbar(tab_frame, orient=tk.VERTICAL, command=self.tab_canvas.yview)
+        sb_x = ttk.Scrollbar(tab_frame, orient=tk.HORIZONTAL, command=self.tab_canvas.xview)
+        self.tab_canvas.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
+        sb_y.pack(side=tk.RIGHT, fill=tk.Y)
+        sb_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tab_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._draw_placeholder()
+        self._raw_tabs_text = ""
+
+    # ── widget helpers ──────────────────────────────────
+    def _sep(self, parent):
+        tk.Frame(parent, height=1, bg=BORDER).pack(fill=tk.X, padx=20, pady=8)
+
+    def _section_label(self, parent, text):
+        tk.Label(parent, text=text, fg=MUTED, bg=SIDEBAR_BG,
+                 font=("Helvetica", 9, "bold")).pack(anchor="w", padx=24, pady=(4, 2))
+
+    def _sidebar_btn(self, parent, text: str, command, bg_color: str):
+        btn = tk.Button(
+            parent, text=text, command=command,
+            bg=bg_color, fg=TEXT, activebackground=ACCENT_HOVER, activeforeground="#fff",
+            font=("Helvetica", 12), anchor="w", relief="flat", cursor="hand2",
+            padx=20, pady=8, bd=0,
+        )
+        btn.pack(fill=tk.X, padx=12, pady=2)
+        btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=ACCENT_HOVER))
+        btn.bind("<Leave>", lambda e, b=btn, c=bg_color: b.configure(bg=c))
+
+    def _draw_placeholder(self):
+        self.tab_canvas.delete("all")
+        self.tab_canvas.create_text(
+            400, 180, text="Load audio and click Analyze\nto generate guitar tabs here",
+            fill=MUTED, font=("Helvetica", 16), anchor="center", justify="center",
         )
 
-        actions_frame = ttk.Frame(control_frame, style="Panel.TFrame")
-        actions_frame.pack(side=tk.LEFT, padx=16, pady=12)
+    def _render_tabs_on_canvas(self, tabs_text: str):
+        """Draw the tab text onto the canvas with coloured formatting."""
+        self.tab_canvas.delete("all")
+        self._raw_tabs_text = tabs_text
 
-        input_frame = ttk.LabelFrame(actions_frame, text="Input", padding=10)
-        input_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Button(input_frame, text="🎙 Record", command=self.on_record).pack(side=tk.LEFT, padx=4)
-        ttk.Button(input_frame, text="📂 Load File", command=self.on_load).pack(side=tk.LEFT, padx=4)
-        ttk.Button(input_frame, text="⚡ Load + Generate", command=self.on_load_and_generate).pack(
-            side=tk.LEFT, padx=4
-        )
+        pad_x, pad_y = 24, 20
+        line_height = 20
+        y = pad_y
 
-        process_frame = ttk.LabelFrame(actions_frame, text="Process", padding=10)
-        process_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Button(process_frame, text="🧠 Analyze", command=self.on_analyze, style="Accent.TButton").pack(
-            side=tk.LEFT, padx=4
-        )
-        ttk.Button(process_frame, text="✨ Best Quality", command=self.on_best_quality).pack(
-            side=tk.LEFT, padx=4
-        )
-        ttk.Button(process_frame, text="🛠 Refine w/ Original", command=self.on_refine_with_original).pack(
-            side=tk.LEFT, padx=4
-        )
-        ttk.Button(process_frame, text="🧪 Check Tabs", command=self.on_check_tabs).pack(
-            side=tk.LEFT, padx=4
-        )
+        tab_font = tkfont.Font(family="Menlo", size=13)
+        chord_font = tkfont.Font(family="Helvetica", size=12, weight="bold")
+        max_x = 800
 
-        output_frame = ttk.LabelFrame(actions_frame, text="Output", padding=10)
-        output_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Button(output_frame, text="💾 Save Tabs", command=self.on_save).pack(side=tk.LEFT, padx=4)
-        ttk.Button(output_frame, text="🔊 Render Audio", command=self.on_render_audio).pack(side=tk.LEFT, padx=4)
-        ttk.Button(output_frame, text="🎧 Match Original", command=self.on_match_original).pack(
-            side=tk.LEFT, padx=4
-        )
+        for raw_line in tabs_text.split("\n"):
+            line = raw_line.rstrip()
+            if not line:
+                y += 12
+                continue
 
-        utils_frame = ttk.LabelFrame(actions_frame, text="Utilities", padding=10)
-        utils_frame.pack(fill=tk.X)
-        ttk.Button(utils_frame, text="🧪 Run Test", command=self.on_test).pack(side=tk.LEFT, padx=4)
-        ttk.Button(utils_frame, text="❓ Help", command=self.on_help).pack(side=tk.LEFT, padx=4)
+            is_string_line = len(line) >= 2 and line[0] in "eBGDAE" and line[1] == "|"
+            is_chord_line = line.startswith("    ") and not is_string_line
 
-        self.status_var = tk.StringVar(value="Ready")
-        status_bar = ttk.Frame(self, style="Panel.TFrame")
-        status_bar.pack(fill=tk.X, padx=16, pady=(4, 0))
-        ttk.Label(status_bar, textvariable=self.status_var, anchor="w").pack(
-            fill=tk.X, padx=10, pady=6
-        )
+            if is_chord_line:
+                self.tab_canvas.create_text(pad_x, y, text=line, anchor="nw",
+                                            fill=TAB_ACCENT, font=chord_font)
+                y += line_height + 2
+            elif is_string_line:
+                # string name in accent
+                self.tab_canvas.create_text(pad_x, y, text=line[:2], anchor="nw",
+                                            fill=ACCENT, font=tab_font)
+                x = pad_x + tab_font.measure(line[:2])
+                i = 2
+                while i < len(line):
+                    ch = line[i]
+                    if ch.isdigit():
+                        j = i
+                        while j < len(line) and line[j].isdigit():
+                            j += 1
+                        num_str = line[i:j]
+                        self.tab_canvas.create_text(x, y, text=num_str, anchor="nw",
+                                                    fill="#ffffff", font=tab_font)
+                        x += tab_font.measure(num_str)
+                        i = j
+                    elif ch == "|":
+                        self.tab_canvas.create_text(x, y, text=ch, anchor="nw",
+                                                    fill=ACCENT, font=tab_font)
+                        x += tab_font.measure(ch)
+                        i += 1
+                    else:
+                        self.tab_canvas.create_text(x, y, text=ch, anchor="nw",
+                                                    fill="#2a3a5a", font=tab_font)
+                        x += tab_font.measure(ch)
+                        i += 1
+                max_x = max(max_x, x + 40)
+                y += line_height
+            else:
+                self.tab_canvas.create_text(pad_x, y, text=line, anchor="nw",
+                                            fill=MUTED, font=chord_font)
+                y += line_height + 4
 
-        self.output = scrolledtext.ScrolledText(
-            self,
-            wrap=tk.WORD,
-            background="#0b1220",
-            foreground="#e2e8f0",
-            insertbackground="#e2e8f0",
-            font=("Menlo", 12),
-        )
-        self.output.pack(fill=tk.BOTH, expand=True, padx=16, pady=(8, 16))
+        self.tab_canvas.configure(scrollregion=(0, 0, max_x, y + 40))
 
-    def on_help(self):
-        messagebox.showinfo(
-            "Help",
-            "\n".join(
-                [
-                    "Quick start:",
-                    "1) Record or Load File",
-                    "2) Analyze to generate tabs",
-                    "3) Save Tabs or Render Audio",
-                    "",
-                    "Improve accuracy:",
-                    "• Best Quality: auto-tunes extraction parameters",
-                    "• Refine w/ Original: correct frets and timing",
-                    "• Check Tabs: objective similarity scores",
-                    "• Match Original: optimizes synth parameters",
-                ]
-            ),
-        )
-
+    # ── status / property helpers ───────────────────────
     def set_status(self, text: str):
         self.status_var.set(text)
         self.update_idletasks()
+
+    @property
+    def duration_var(self):
+        return self._param_entries["duration"]
+
+    @property
+    def min_duration_var(self):
+        return self._param_entries["min_dur"]
+
+    @property
+    def min_voiced_var(self):
+        return self._param_entries["voiced"]
+
+    @property
+    def max_fret_var(self):
+        return self._param_entries["fret"]
+
+    @property
+    def segment_var(self):
+        return self._param_entries["segment"]
+
+    def _get_tabs_text(self) -> str:
+        return self._raw_tabs_text
+
+    # ── actions ─────────────────────────────────────────
+    def on_load(self):
+        file_path = filedialog.askopenfilename(
+            title="Select audio file",
+            filetypes=[("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+        self.set_status("Loading...")
+        try:
+            audio, _ = self.audio_proc.load_audio_file(file_path)
+            self.audio_data = audio
+            self._loaded_path = file_path
+            name = os.path.basename(file_path)
+            self.file_info_var.set(f"  {name}  ({len(audio)/44100:.1f}s)")
+            self.set_status("Audio loaded")
+        except Exception as exc:
+            self.set_status("Load failed")
+            messagebox.showerror("Error", str(exc))
 
     def on_record(self):
         try:
             duration = float(self.duration_var.get())
         except ValueError:
-            messagebox.showerror("Invalid input", "Duration must be a number.")
+            messagebox.showerror("Invalid", "Duration must be a number.")
             return
-
         def task():
             self.set_status("Recording...")
             try:
                 self.audio_data = self.audio_proc.record_from_microphone(duration)
+                self._loaded_path = None
+                self.file_info_var.set(f"  Recorded {duration:.1f}s")
                 self.set_status("Recording complete")
             except Exception as exc:
                 self.set_status("Recording failed")
                 messagebox.showerror("Error", str(exc))
-
         threading.Thread(target=task, daemon=True).start()
-
-    def on_load(self):
-        file_path = filedialog.askopenfilename(
-            title="Select audio file",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not file_path:
-            return
-        self.set_status("Loading file...")
-        try:
-            audio, _ = self.audio_proc.load_audio_file(file_path)
-            self.audio_data = audio
-            self.set_status("File loaded")
-        except Exception as exc:
-            self.set_status("Load failed")
-            messagebox.showerror("Error", str(exc))
-
-    def on_load_and_generate(self):
-        file_path = filedialog.askopenfilename(
-            title="Select audio file",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not file_path:
-            return
-        self.set_status("Loading file...")
-        try:
-            audio, _ = self.audio_proc.load_audio_file(file_path)
-            self.audio_data = audio
-            self.set_status("File loaded")
-            self.on_analyze()
-        except Exception as exc:
-            self.set_status("Load failed")
-            messagebox.showerror("Error", str(exc))
 
     def on_analyze(self):
         if self.audio_data is None:
-            messagebox.showwarning("No audio", "Please record or load audio first.")
+            messagebox.showwarning("No audio", "Load or record audio first.")
             return
-
         try:
-            min_duration = float(self.min_duration_var.get())
+            min_dur = float(self.min_duration_var.get())
             min_voiced = float(self.min_voiced_var.get())
             max_fret = int(self.max_fret_var.get())
-            segment_seconds = float(self.segment_var.get()) if self.segment_var.get().strip() else None
+            seg = float(self.segment_var.get()) if self.segment_var.get().strip() else None
         except ValueError:
-            messagebox.showerror("Invalid input", "Check analysis parameters.")
+            messagebox.showerror("Invalid", "Check parameter values.")
             return
 
         def task():
@@ -272,77 +349,158 @@ class GuitarTabApp(tk.Tk):
             try:
                 self.tab_gen.set_max_fret(max_fret)
                 notes = self.pitch_det.extract_notes_from_audio(
-                    self.audio_data,
-                    min_duration=min_duration,
-                    min_voiced_prob=min_voiced,
-                    use_harmonic=self.use_harmonic_var.get(),
-                    segment_seconds=segment_seconds,
+                    self.audio_data, min_duration=min_dur, min_voiced_prob=min_voiced,
+                    use_harmonic=self.use_harmonic_var.get(), segment_seconds=seg,
                 )
                 self.tab_gen.generate_tabs(notes)
                 tabs_text = self.tab_gen.format_tabs_as_text()
-                self.output.delete("1.0", tk.END)
-                self.output.insert(tk.END, tabs_text)
-                self.set_status(f"Done. Notes: {len(notes)}")
+                self.after(0, lambda: self._render_tabs_on_canvas(tabs_text))
+                self.set_status(f"Done - {len(notes)} notes detected")
             except Exception as exc:
                 self.set_status("Analysis failed")
                 messagebox.showerror("Error", str(exc))
-
         threading.Thread(target=task, daemon=True).start()
-
-    def on_test(self):
-        result = run_sine_test(self.pitch_det)
-        message = (
-            f"Expected: {result.expected_note}\n"
-            f"Detected: {result.detected_note}\n"
-            f"Notes: {result.detected_count}\n"
-            f"Success: {result.success}"
-        )
-        messagebox.showinfo("Sine test", message)
 
     def on_best_quality(self):
         if self.audio_data is None:
-            messagebox.showwarning("No audio", "Please record or load audio first.")
+            messagebox.showwarning("No audio", "Load or record audio first.")
             return
-
         try:
             max_fret = int(self.max_fret_var.get())
         except ValueError:
-            messagebox.showerror("Invalid input", "Max fret must be an integer.")
+            messagebox.showerror("Invalid", "Max fret must be integer.")
             return
 
         def task():
-            self.set_status("Auto-tuning parameters...")
+            self.set_status("Auto-tuning...")
             try:
                 tune = find_best_extraction(self.audio_data, self.pitch_det, use_harmonic=True)
                 self.tab_gen.set_max_fret(max_fret)
                 self.tab_gen.generate_tabs(tune.notes)
                 tabs_text = self.tab_gen.format_tabs_as_text()
-                self.output.delete("1.0", tk.END)
-                self.output.insert(tk.END, tabs_text)
-
+                self.after(0, lambda: self._render_tabs_on_canvas(tabs_text))
                 self.min_duration_var.set(str(tune.min_duration))
                 self.min_voiced_var.set(str(tune.min_voiced_prob))
                 self.segment_var.set(str(tune.segment_seconds))
                 self.use_harmonic_var.set(tune.use_harmonic)
-
-                self.set_status(
-                    f"Best done. Notes: {len(tune.notes)} | "
-                    f"md={tune.min_duration}, vp={tune.min_voiced_prob}, seg={tune.segment_seconds}"
-                )
+                self.set_status(f"Best quality - {len(tune.notes)} notes")
             except Exception as exc:
                 self.set_status("Auto-tune failed")
                 messagebox.showerror("Error", str(exc))
+        threading.Thread(target=task, daemon=True).start()
 
+    def on_refine_with_original(self):
+        tabs_text = self._get_tabs_text()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+        original_path = filedialog.askopenfilename(
+            title="Select original audio",
+            filetypes=[("Audio", "*.wav *.mp3 *.flac *.ogg *.m4a"), ("All", "*.*")],
+        )
+        if not original_path:
+            return
+
+        def task():
+            self.set_status("Refining tabs...")
+            try:
+                result = refine_tabs_with_original(tabs_text=tabs_text, original_audio_path=original_path)
+                self.after(0, lambda: self._render_tabs_on_canvas(result.refined_tabs_text))
+                self.set_status(f"Refined: {result.changes_count} changes, step={result.estimated_step_seconds:.3f}s")
+            except Exception as exc:
+                self.set_status("Refine failed")
+                messagebox.showerror("Error", str(exc))
+        threading.Thread(target=task, daemon=True).start()
+
+    def on_check_tabs(self):
+        tabs_text = self._get_tabs_text()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+        original_path = filedialog.askopenfilename(
+            title="Select original audio",
+            filetypes=[("Audio", "*.wav *.mp3 *.flac *.ogg *.m4a"), ("All", "*.*")],
+        )
+        if not original_path:
+            return
+
+        def task():
+            self.set_status("Checking tabs...")
+            try:
+                r = check_tabs_against_original(tabs_text=tabs_text, original_audio_path=original_path)
+                self.set_status(f"overall={r.overall_score:.4f}  chroma={r.chroma_score:.4f}  onset={r.onset_score:.4f}")
+                messagebox.showinfo("Tabs Check", "\n".join([
+                    f"Overall score:  {r.overall_score:.4f}",
+                    f"Chroma score:   {r.chroma_score:.4f}",
+                    f"Onset score:    {r.onset_score:.4f}",
+                    f"Est. step:      {r.estimated_step_seconds:.3f}s",
+                    f"Est. note:      {r.estimated_note_seconds:.3f}s",
+                    f"Analyzed:       {r.analyzed_seconds:.1f}s",
+                ]))
+            except Exception as exc:
+                self.set_status("Check failed")
+                messagebox.showerror("Error", str(exc))
+        threading.Thread(target=task, daemon=True).start()
+
+    def on_render_audio(self):
+        tabs_text = self._get_tabs_text()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+        out_path = filedialog.asksaveasfilename(
+            title="Save synthesized audio", defaultextension=".wav",
+            filetypes=[("WAV", "*.wav")],
+        )
+        if not out_path:
+            return
+
+        def task():
+            self.set_status("Synthesizing...")
+            try:
+                result = synthesize_from_tabs_text(tabs_text, output_path=out_path, play=True)
+                self.set_status(f"Rendered: {result.notes_count} notes, {result.duration:.1f}s")
+            except Exception as exc:
+                self.set_status("Render failed")
+                messagebox.showerror("Error", str(exc))
+        threading.Thread(target=task, daemon=True).start()
+
+    def on_match_original(self):
+        tabs_text = self._get_tabs_text()
+        if not tabs_text:
+            messagebox.showwarning("No tabs", "Generate tabs first.")
+            return
+        original_path = filedialog.askopenfilename(
+            title="Select original audio",
+            filetypes=[("Audio", "*.wav *.mp3 *.flac *.ogg *.m4a"), ("All", "*.*")],
+        )
+        if not original_path:
+            return
+        out_path = filedialog.asksaveasfilename(
+            title="Save matched audio", defaultextension=".wav",
+            filetypes=[("WAV", "*.wav")],
+        )
+        if not out_path:
+            return
+
+        def task():
+            self.set_status("Matching (may take a while)...")
+            try:
+                result = optimize_synth_against_original(
+                    tabs_text=tabs_text, original_audio_path=original_path, output_path=out_path,
+                )
+                self.set_status(f"Matched: score={result.score:.4f}")
+            except Exception as exc:
+                self.set_status("Match failed")
+                messagebox.showerror("Error", str(exc))
         threading.Thread(target=task, daemon=True).start()
 
     def on_save(self):
-        tabs_text = self.output.get("1.0", tk.END).strip()
+        tabs_text = self._get_tabs_text()
         if not tabs_text:
             messagebox.showwarning("No tabs", "Generate tabs first.")
             return
         file_path = filedialog.asksaveasfilename(
-            title="Save tabs",
-            defaultextension=".txt",
+            title="Save tabs", defaultextension=".txt",
             filetypes=[("Text", "*.txt")],
         )
         if not file_path:
@@ -354,153 +512,27 @@ class GuitarTabApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
 
-    def on_refine_with_original(self):
-        tabs_text = self.output.get("1.0", tk.END).strip()
-        if not tabs_text:
-            messagebox.showwarning("No tabs", "Generate tabs first.")
-            return
-
-        original_path = filedialog.askopenfilename(
-            title="Select original audio file",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not original_path:
-            return
-
-        def task():
-            self.set_status("Refining tabs with original audio...")
-            try:
-                result = refine_tabs_with_original(
-                    tabs_text=tabs_text,
-                    original_audio_path=original_path,
-                )
-                self.output.delete("1.0", tk.END)
-                self.output.insert(tk.END, result.refined_tabs_text)
-                self.set_status(
-                    f"Refined: changes={result.changes_count}, step={result.estimated_step_seconds:.3f}s"
-                )
-            except Exception as exc:
-                self.set_status("Refine failed")
-                messagebox.showerror("Error", str(exc))
-
-        threading.Thread(target=task, daemon=True).start()
-
-    def on_check_tabs(self):
-        tabs_text = self.output.get("1.0", tk.END).strip()
-        if not tabs_text:
-            messagebox.showwarning("No tabs", "Generate tabs first.")
-            return
-
-        original_path = filedialog.askopenfilename(
-            title="Select original audio file",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not original_path:
-            return
-
-        def task():
-            self.set_status("Checking tabs against original...")
-            try:
-                result = check_tabs_against_original(
-                    tabs_text=tabs_text,
-                    original_audio_path=original_path,
-                )
-                self.set_status(
-                    f"Checked: overall={result.overall_score:.4f}, "
-                    f"chroma={result.chroma_score:.4f}, onset={result.onset_score:.4f}"
-                )
-                messagebox.showinfo(
-                    "Tabs Check",
-                    "\n".join(
-                        [
-                            f"Overall score: {result.overall_score:.4f}",
-                            f"Chroma score: {result.chroma_score:.4f}",
-                            f"Onset score: {result.onset_score:.4f}",
-                            f"Estimated step: {result.estimated_step_seconds:.3f}s",
-                            f"Estimated note: {result.estimated_note_seconds:.3f}s",
-                            f"Analyzed seconds: {result.analyzed_seconds:.2f}",
-                        ]
-                    ),
-                )
-            except Exception as exc:
-                self.set_status("Check failed")
-                messagebox.showerror("Error", str(exc))
-
-        threading.Thread(target=task, daemon=True).start()
-
-    def on_render_audio(self):
-        tabs_text = self.output.get("1.0", tk.END).strip()
-        if not tabs_text:
-            messagebox.showwarning("No tabs", "Generate tabs first.")
-            return
-
-        out_path = filedialog.asksaveasfilename(
-            title="Save synthesized audio",
-            defaultextension=".wav",
-            filetypes=[("WAV audio", "*.wav")],
-        )
-        if not out_path:
-            return
-
-        def task():
-            self.set_status("Synthesizing guitar audio from tabs...")
-            try:
-                result = synthesize_from_tabs_text(tabs_text, output_path=out_path, play=True)
-                self.set_status(
-                    f"Audio rendered: {result.notes_count} notes, {result.duration:.1f}s"
-                )
-            except Exception as exc:
-                self.set_status("Audio render failed")
-                messagebox.showerror("Error", str(exc))
-
-        threading.Thread(target=task, daemon=True).start()
-
-    def on_match_original(self):
-        tabs_text = self.output.get("1.0", tk.END).strip()
-        if not tabs_text:
-            messagebox.showwarning("No tabs", "Generate tabs first.")
-            return
-
-        original_path = filedialog.askopenfilename(
-            title="Select original audio file",
-            filetypes=[
-                ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not original_path:
-            return
-
-        out_path = filedialog.asksaveasfilename(
-            title="Save matched synthesized audio",
-            defaultextension=".wav",
-            filetypes=[("WAV audio", "*.wav")],
-        )
-        if not out_path:
-            return
-
-        def task():
-            self.set_status("Matching synth to original (this may take a while)...")
-            try:
-                result = optimize_synth_against_original(
-                    tabs_text=tabs_text,
-                    original_audio_path=original_path,
-                    output_path=out_path,
-                )
-                self.set_status(
-                    f"Matched: score={result.score:.4f}, params={result.params}"
-                )
-            except Exception as exc:
-                self.set_status("Match failed")
-                messagebox.showerror("Error", str(exc))
-
-        threading.Thread(target=task, daemon=True).start()
+    def on_help(self):
+        messagebox.showinfo("Help - Guitar Tab Generator", "\n".join([
+            "QUICK START",
+            "1.  Load Audio or Record from Mic",
+            "2.  Click Analyze to generate tabs",
+            "3.  Save Tabs or Render Audio",
+            "",
+            "IMPROVE ACCURACY",
+            "  Best Quality - auto-tune extraction params",
+            "  Refine - correct frets using original audio",
+            "  Check Tabs - see objective match scores",
+            "  Match Original - optimize synth quality",
+            "",
+            "PARAMETERS",
+            "  Duration - mic recording length (seconds)",
+            "  Min dur - shortest note to detect",
+            "  Voiced prob - confidence filter (0-1)",
+            "  Max fret - highest fret to use in tabs",
+            "  Segment - process long audio in chunks",
+            "  Harmonic - isolate harmonic content first",
+        ]))
 
 
 if __name__ == "__main__":
