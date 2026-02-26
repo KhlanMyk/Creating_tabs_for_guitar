@@ -26,26 +26,42 @@ def _estimate_step_seconds(cols: int, step_seconds: float | None) -> float:
 
 
 def _format_tabs_from_grid(grid: list[list[str]], cols: int) -> str:
+    """Format a 6-row token grid into the professional measure-based tab format."""
     string_names = ["e", "B", "G", "D", "A", "E"]
+    beats_per_measure = 4
+    measures_per_line = 4
 
-    lines: list[str] = []
-    lines.append("=" * 60)
-    lines.append("GUITAR TABS")
-    lines.append("=" * 60)
+    # split columns into measures
+    measures: list[list[int]] = []
+    for i in range(0, cols, beats_per_measure):
+        measures.append(list(range(i, min(i + beats_per_measure, cols))))
 
-    for row in range(6):
-        parts = []
-        for c in range(cols):
-            token = grid[row][c]
-            if token == "--":
-                token = "-"
-            parts.append(f"{token:>2}")
+    # split measures into display lines
+    lines_of_measures: list[list[list[int]]] = []
+    for i in range(0, len(measures), measures_per_line):
+        lines_of_measures.append(measures[i : i + measures_per_line])
 
-        line = f"{string_names[row]}|" + "-".join(parts) + "|"
-        lines.append(line)
+    output: list[str] = []
 
-    lines.append("=" * 60)
-    return "\n".join(lines)
+    for line_measures in lines_of_measures:
+        for row in range(6):
+            line = f"{string_names[row]}|"
+            for measure_cols in line_measures:
+                for ci in measure_cols:
+                    if ci < cols:
+                        token = grid[row][ci]
+                        fret_str = "-" if token == "--" else token
+                    else:
+                        fret_str = "-"
+                    if len(fret_str) == 1:
+                        line += f"-{fret_str}-"
+                    else:
+                        line += f"{fret_str}-"
+                line += "|"
+            output.append(line)
+        output.append("")  # blank line between systems
+
+    return "\n".join(output).rstrip()
 
 
 def _closest_refined_fret(

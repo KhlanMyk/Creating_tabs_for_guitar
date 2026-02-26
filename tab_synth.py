@@ -60,33 +60,68 @@ def _karplus_strong(freq: float, duration: float, sample_rate: int, decay: float
 def parse_tabs_text(tab_text: str) -> Tuple[List[List[str]], int]:
     """Parse generated tabs text into 6-string token grid.
 
+    Supports both the old variable-width format and the new professional
+    format that uses fixed 3-char columns with ``|`` measure bars and
+    multiple systems (groups of 6 lines).
+
     Returns:
         (grid_by_string, columns_count) where string index 0 is high-e (string 1).
     """
-    lines = [ln.strip() for ln in tab_text.splitlines() if ln.strip()]
-    string_lines = []
-    for ln in lines:
-        if re.match(r'^[eBGDAE]\|', ln):
-            string_lines.append(ln)
+    lines = tab_text.splitlines()
 
-    if len(string_lines) < 6:
+    # Collect groups of 6 consecutive tab lines (one system each).
+    groups: List[List[str]] = []
+    buffer: List[str] = []
+    for ln in lines:
+        stripped = ln.strip()
+        if re.match(r'^[eBGDAE]\|', stripped):
+            buffer.append(stripped)
+            if len(buffer) == 6:
+                groups.append(buffer)
+                buffer = []
+        else:
+            # non-tab line resets the buffer (chord labels, blanks, headers)
+            if len(buffer) == 6:
+                groups.append(buffer)
+            buffer = []
+    if len(buffer) == 6:
+        groups.append(buffer)
+
+    if not groups:
         raise ValueError("Tabs text does not contain 6 string lines.")
 
-    # Keep order as e B G D A E
-    parsed: List[List[str]] = []
-    max_cols = 0
-    for ln in string_lines[:6]:
-        # Extract only numbers and rests from the body
-        body = ln.split('|', 1)[1].rsplit('|', 1)[0] if '|' in ln else ln
-        tokens = re.findall(r'--|-|\d+', body)
-        tokens = ['--' if t == '-' else t for t in tokens]
-        parsed.append(tokens)
-        max_cols = max(max_cols, len(tokens))
+    # Parse each group and concatenate columns.
+    parsed: List[List[str]] = [[] for _ in range(6)]
 
-    # pad to same number of columns
+    for group in groups:
+        for row_idx, ln in enumerate(group):
+            body = ln.split('|', 1)[1] if '|' in ln else ln
+            body_stripped = body.rstrip('|')
+
+            if '|' in body_stripped:
+                # ──── NEW FORMAT ────
+                # Fixed 3-char columns with internal | measure bars.
+                body_clean = body_stripped.replace('|', '')
+                i = 0
+                while i < len(body_clean):
+                    chunk = body_clean[i:i + 3]
+                    digits = ''.join(c for c in chunk if c.isdigit())
+                    if digits:
+                        parsed[row_idx].append(digits)
+                    else:
+                        parsed[row_idx].append('--')
+                    i += 3
+            else:
+                # ──── OLD FORMAT ────
+                # Variable-width tokens separated by dashes.
+                tokens = re.findall(r'--|-|\d+', body_stripped)
+                tokens = ['--' if t == '-' else t for t in tokens]
+                parsed[row_idx].extend(tokens)
+
+    max_cols = max(len(row) for row in parsed) if parsed else 0
     for row in parsed:
-        if len(row) < max_cols:
-            row.extend(['--'] * (max_cols - len(row)))
+        while len(row) < max_cols:
+            row.append('--')
 
     return parsed, max_cols
 
