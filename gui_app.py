@@ -18,13 +18,14 @@ from tab_synth import synthesize_from_tabs_text
 
 
 # ── colour palette ──────────────────────────────────────
-BG          = "#0f0f0f"
+BG          = "#111118"
 SIDEBAR_BG  = "#1a1a2e"
 CARD_BG     = "#16213e"
 ACCENT      = "#e94560"
 ACCENT_HOVER = "#ff6b81"
 TEXT        = "#eaeaea"
 MUTED       = "#8892b0"
+DIM         = "#5a6380"
 TAB_BG      = "#0a0a14"
 TAB_FG      = "#c8d6e5"
 TAB_ACCENT  = "#feca57"
@@ -33,6 +34,14 @@ BORDER      = "#233554"
 SUCCESS     = "#55efc4"
 WARN        = "#f6b93b"
 
+# section-specific accent colours
+SEC_INPUT   = "#00b894"
+SEC_PROCESS = "#6c5ce7"
+SEC_OUTPUT  = "#fdcb6e"
+SEC_INPUT_HOVER   = "#00e6b8"
+SEC_PROCESS_HOVER = "#a29bfe"
+SEC_OUTPUT_HOVER  = "#ffe8a1"
+
 
 class GuitarTabApp(tk.Tk):
     """Redesigned premium GUI for generating guitar tabs."""
@@ -40,8 +49,8 @@ class GuitarTabApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Guitar Tab Generator")
-        self.geometry("1280x800")
-        self.minsize(1060, 680)
+        self.geometry("1380x850")
+        self.minsize(1100, 700)
         self.configure(bg=BG)
 
         self.audio_proc = AudioProcessor()
@@ -73,55 +82,105 @@ class GuitarTabApp(tk.Tk):
 
     # ── layout ──────────────────────────────────────────
     def _build_ui(self):
-        # ── sidebar ─────────────────────────────────────
-        sidebar = tk.Frame(self, bg=SIDEBAR_BG, width=260)
-        sidebar.pack(side=tk.LEFT, fill=tk.Y)
-        sidebar.pack_propagate(False)
+        # ── sidebar (scrollable) ─────────────────────────
+        sidebar_outer = tk.Frame(self, bg=SIDEBAR_BG, width=310)
+        sidebar_outer.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar_outer.pack_propagate(False)
+
+        sidebar_canvas = tk.Canvas(sidebar_outer, bg=SIDEBAR_BG, highlightthickness=0, width=310)
+        sidebar_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        sidebar = tk.Frame(sidebar_canvas, bg=SIDEBAR_BG)
+        sidebar_canvas.create_window((0, 0), window=sidebar, anchor="nw", width=310)
+
+        def _on_sidebar_configure(event):
+            sidebar_canvas.configure(scrollregion=sidebar_canvas.bbox("all"))
+        sidebar.bind("<Configure>", _on_sidebar_configure)
+        sidebar_canvas.bind_all("<MouseWheel>",
+            lambda e: sidebar_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         # logo area
         logo_frame = tk.Frame(sidebar, bg=SIDEBAR_BG)
-        logo_frame.pack(fill=tk.X, padx=20, pady=(24, 16))
-        tk.Label(logo_frame, text="Guitar Tab", font=("Helvetica", 17, "bold"),
-                 fg=TEXT, bg=SIDEBAR_BG).pack(anchor="w")
-        tk.Label(logo_frame, text="Generator", font=("Helvetica", 17),
-                 fg=MUTED, bg=SIDEBAR_BG).pack(anchor="w")
+        logo_frame.pack(fill=tk.X, padx=20, pady=(20, 6))
+        tk.Label(logo_frame, text="Guitar Tab Generator",
+                 font=("Helvetica", 15, "bold"), fg=TEXT, bg=SIDEBAR_BG).pack(anchor="w")
+        tk.Label(logo_frame, text="Audio  ->  Tablature  ->  Playback",
+                 font=("Helvetica", 10), fg=DIM, bg=SIDEBAR_BG).pack(anchor="w", pady=(2, 0))
 
-        self._sep(sidebar)
+        # ── STEP 1 ─ Input ──────────────────────────────
+        self._section_header(sidebar, "1", "Load Audio", SEC_INPUT,
+                             "Start here — load a file or record from microphone")
+        self._action_btn(sidebar,
+            title="Open File",
+            desc="Load MP3, WAV, FLAC, OGG or M4A",
+            command=self.on_load,
+            accent=SEC_INPUT, hover=SEC_INPUT_HOVER)
+        self._action_btn(sidebar,
+            title="Record Mic",
+            desc="Capture live audio from microphone",
+            command=self.on_record,
+            accent=SEC_INPUT, hover=SEC_INPUT_HOVER)
 
-        # ── Input section ───
-        self._section_label(sidebar, "INPUT")
-        self._sidebar_btn(sidebar, "Load Audio",          self.on_load,              CARD_BG)
-        self._sidebar_btn(sidebar, "Record Mic",          self.on_record,            CARD_BG)
+        # ── STEP 2 ─ Process ────────────────────────────
+        self._section_header(sidebar, "2", "Generate Tabs", SEC_PROCESS,
+                             "Convert audio into guitar tablature")
+        self._action_btn(sidebar,
+            title="Analyze",
+            desc="Detect notes and create tabs (main action)",
+            command=self.on_analyze,
+            accent=ACCENT, hover=ACCENT_HOVER, primary=True)
+        self._action_btn(sidebar,
+            title="Best Quality",
+            desc="Auto-tune all parameters for best result",
+            command=self.on_best_quality,
+            accent=SEC_PROCESS, hover=SEC_PROCESS_HOVER)
+        self._action_btn(sidebar,
+            title="Refine with Original",
+            desc="Correct frets by comparing to source audio",
+            command=self.on_refine_with_original,
+            accent=SEC_PROCESS, hover=SEC_PROCESS_HOVER)
 
-        self._sep(sidebar)
+        # ── STEP 3 ─ Output ─────────────────────────────
+        self._section_header(sidebar, "3", "Export & Verify", SEC_OUTPUT,
+                             "Save, render, and check quality")
+        self._action_btn(sidebar,
+            title="Save Tabs",
+            desc="Export tablature to a .txt file",
+            command=self.on_save,
+            accent=SEC_OUTPUT, hover=SEC_OUTPUT_HOVER)
+        self._action_btn(sidebar,
+            title="Render Audio",
+            desc="Synthesize guitar audio from tabs",
+            command=self.on_render_audio,
+            accent=SEC_OUTPUT, hover=SEC_OUTPUT_HOVER)
+        self._action_btn(sidebar,
+            title="Match Original",
+            desc="Optimize synth parameters vs original",
+            command=self.on_match_original,
+            accent=SEC_OUTPUT, hover=SEC_OUTPUT_HOVER)
+        self._action_btn(sidebar,
+            title="Check Tabs",
+            desc="Score tabs accuracy against original",
+            command=self.on_check_tabs,
+            accent=SEC_OUTPUT, hover=SEC_OUTPUT_HOVER)
 
-        # ── Process section ───
-        self._section_label(sidebar, "PROCESS")
-        self._sidebar_btn(sidebar, "Analyze",              self.on_analyze,           ACCENT)
-        self._sidebar_btn(sidebar, "Best Quality",         self.on_best_quality,      CARD_BG)
-        self._sidebar_btn(sidebar, "Refine w/ Original",   self.on_refine_with_original, CARD_BG)
+        # ── Help ────────────────────────────────────────
+        tk.Frame(sidebar, height=1, bg=BORDER).pack(fill=tk.X, padx=16, pady=(12, 6))
+        self._action_btn(sidebar,
+            title="Help",
+            desc="Show quick-start guide",
+            command=self.on_help,
+            accent=DIM, hover=MUTED)
 
-        self._sep(sidebar)
+        # bottom padding
+        tk.Frame(sidebar, bg=SIDEBAR_BG, height=16).pack()
 
-        # ── Output section ───
-        self._section_label(sidebar, "OUTPUT")
-        self._sidebar_btn(sidebar, "Render Audio",         self.on_render_audio,      CARD_BG)
-        self._sidebar_btn(sidebar, "Match Original",       self.on_match_original,    CARD_BG)
-        self._sidebar_btn(sidebar, "Check Tabs",           self.on_check_tabs,        CARD_BG)
-        self._sidebar_btn(sidebar, "Save Tabs",            self.on_save,              CARD_BG)
-
-        self._sep(sidebar)
-        self._sidebar_btn(sidebar, "Help",                 self.on_help,              CARD_BG)
-
-        # spacer
-        tk.Frame(sidebar, bg=SIDEBAR_BG).pack(fill=tk.BOTH, expand=True)
-
-        # status footer
+        # ── status footer (outside scroll) ──────────────
         self.status_var = tk.StringVar(value="Ready")
-        status_frame = tk.Frame(sidebar, bg="#0d1025")
+        status_frame = tk.Frame(sidebar_outer, bg="#0d1025")
         status_frame.pack(fill=tk.X, side=tk.BOTTOM)
         tk.Label(status_frame, textvariable=self.status_var, fg=SUCCESS, bg="#0d1025",
-                 font=("Helvetica", 10), anchor="w", wraplength=240).pack(padx=16, pady=12)
+                 font=("Helvetica", 10), anchor="w", wraplength=280).pack(padx=16, pady=10)
 
         # ── main content ────────────────────────────────
         main = tk.Frame(self, bg=BG)
@@ -178,23 +237,65 @@ class GuitarTabApp(tk.Tk):
         self._raw_tabs_text = ""
 
     # ── widget helpers ──────────────────────────────────
-    def _sep(self, parent):
-        tk.Frame(parent, height=1, bg=BORDER).pack(fill=tk.X, padx=20, pady=8)
+    def _section_header(self, parent, step_num: str, title: str, color: str, subtitle: str):
+        """Draw a numbered section header with coloured step badge."""
+        frame = tk.Frame(parent, bg=SIDEBAR_BG)
+        frame.pack(fill=tk.X, padx=16, pady=(14, 4))
 
-    def _section_label(self, parent, text):
-        tk.Label(parent, text=text, fg=MUTED, bg=SIDEBAR_BG,
-                 font=("Helvetica", 9, "bold")).pack(anchor="w", padx=24, pady=(4, 2))
+        # step badge
+        badge = tk.Label(frame, text=f" {step_num} ", font=("Helvetica", 10, "bold"),
+                         fg="#fff", bg=color)
+        badge.pack(side=tk.LEFT, padx=(0, 8))
 
-    def _sidebar_btn(self, parent, text: str, command, bg_color: str):
-        btn = tk.Button(
-            parent, text=text, command=command,
-            bg=bg_color, fg=TEXT, activebackground=ACCENT_HOVER, activeforeground="#fff",
-            font=("Helvetica", 12), anchor="w", relief="flat", cursor="hand2",
-            padx=20, pady=8, bd=0,
-        )
-        btn.pack(fill=tk.X, padx=12, pady=2)
-        btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=ACCENT_HOVER))
-        btn.bind("<Leave>", lambda e, b=btn, c=bg_color: b.configure(bg=c))
+        # title + subtitle
+        text_frame = tk.Frame(frame, bg=SIDEBAR_BG)
+        text_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(text_frame, text=title, font=("Helvetica", 13, "bold"),
+                 fg=TEXT, bg=SIDEBAR_BG, anchor="w").pack(anchor="w")
+        tk.Label(text_frame, text=subtitle, font=("Helvetica", 9),
+                 fg=DIM, bg=SIDEBAR_BG, anchor="w", wraplength=200).pack(anchor="w")
+
+    def _action_btn(self, parent, *, title: str, desc: str, command,
+                    accent: str, hover: str, primary: bool = False):
+        """Create a button card with title + description."""
+        card_bg = ACCENT if primary else CARD_BG
+        card = tk.Frame(parent, bg=card_bg, cursor="hand2")
+        card.pack(fill=tk.X, padx=16, pady=3)
+
+        inner = tk.Frame(card, bg=card_bg)
+        inner.pack(fill=tk.X, padx=14, pady=8)
+
+        # coloured left bar
+        bar = tk.Frame(card, bg=accent, width=3)
+        bar.place(x=0, y=4, relheight=0.8)
+
+        title_lbl = tk.Label(inner, text=title,
+                             font=("Helvetica", 12, "bold") if primary else ("Helvetica", 11),
+                             fg="#fff" if primary else TEXT, bg=card_bg, anchor="w")
+        title_lbl.pack(anchor="w")
+
+        desc_lbl = tk.Label(inner, text=desc, font=("Helvetica", 9),
+                            fg="#ccc" if primary else DIM, bg=card_bg,
+                            anchor="w", wraplength=240)
+        desc_lbl.pack(anchor="w", pady=(1, 0))
+
+        # click on anything in the card
+        for widget in (card, inner, title_lbl, desc_lbl):
+            widget.bind("<Button-1>", lambda e, c=command: c())
+            widget.configure(cursor="hand2")
+
+        # hover
+        def on_enter(_):
+            for w in (card, inner, title_lbl, desc_lbl):
+                w.configure(bg=hover if not primary else ACCENT_HOVER)
+
+        def on_leave(_):
+            for w in (card, inner, title_lbl, desc_lbl):
+                w.configure(bg=card_bg)
+
+        for widget in (card, inner, title_lbl, desc_lbl):
+            widget.bind("<Enter>", on_enter)
+            widget.bind("<Leave>", on_leave)
 
     def _draw_placeholder(self):
         self.tab_canvas.delete("all")
