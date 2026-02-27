@@ -14,7 +14,7 @@ from tab_checker import check_tabs_against_original
 from tab_generator import GuitarTabGenerator
 from tab_refiner import refine_tabs_with_original
 from self_test import run_sine_test
-from tab_synth import synthesize_from_tabs_text
+from tab_synth import synthesize_from_tabs_text, synthesize_from_timed_events
 
 
 # ── colour palette ──────────────────────────────────────
@@ -58,6 +58,7 @@ class GuitarTabApp(tk.Tk):
         self.tab_gen = GuitarTabGenerator()
         self.audio_data = None
         self._loaded_path: str | None = None
+        self._timed_events: list[dict] = []  # real-timing data for synthesis
 
         self._setup_styles()
         self._build_ui()
@@ -525,11 +526,14 @@ class GuitarTabApp(tk.Tk):
                 self.tab_gen.set_max_fret(max_fret)
                 notes = self.pitch_det.extract_notes_from_audio(
                     self.audio_data, min_duration=min_dur, min_voiced_prob=min_voiced,
-                    use_harmonic=self.use_harmonic_var.get(), segment_seconds=seg,
+                    use_harmonic=self.use_harmonic_var.get(),
+                    segment_seconds=seg,
+                    use_onset_alignment=True,
                     progress_callback=lambda f, m: self._show_progress(f * 0.9, m),
                 )
                 self._show_progress(0.95, "Generating tabs...")
                 self.tab_gen.generate_tabs(notes)
+                self._timed_events = self.tab_gen.get_timed_events()
                 tabs_text = self.tab_gen.format_tabs_as_text()
                 self.after(0, lambda: self._render_tabs_on_canvas(tabs_text))
                 self.set_status(f"Done - {len(notes)} notes detected")
@@ -558,6 +562,7 @@ class GuitarTabApp(tk.Tk):
                 self._show_progress(0.95, "Generating tabs...")
                 self.tab_gen.set_max_fret(max_fret)
                 self.tab_gen.generate_tabs(tune.notes)
+                self._timed_events = self.tab_gen.get_timed_events()
                 tabs_text = self.tab_gen.format_tabs_as_text()
                 self.after(0, lambda: self._render_tabs_on_canvas(tabs_text))
                 self.after(0, lambda: self.min_duration_var.set(str(tune.min_duration)))
@@ -625,7 +630,7 @@ class GuitarTabApp(tk.Tk):
 
     def on_render_audio(self):
         tabs_text = self._get_tabs_text()
-        if not tabs_text:
+        if not tabs_text and not self._timed_events:
             messagebox.showwarning("No tabs", "Generate tabs first.")
             return
         out_path = filedialog.asksaveasfilename(
@@ -638,7 +643,14 @@ class GuitarTabApp(tk.Tk):
         def task():
             self.set_status("Synthesizing...")
             try:
-                result = synthesize_from_tabs_text(tabs_text, output_path=out_path, play=True)
+                if self._timed_events:
+                    # Real-timing synthesis (preserves rhythm)
+                    _, result = synthesize_from_timed_events(
+                        self._timed_events, output_path=out_path, play=True,
+                    )
+                else:
+                    # Fallback: fixed-step from text
+                    result = synthesize_from_tabs_text(tabs_text, output_path=out_path, play=True)
                 self.set_status(f"Rendered: {result.notes_count} notes, {result.duration:.1f}s")
             except Exception as exc:
                 self.set_status("Render failed")
