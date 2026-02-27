@@ -11,11 +11,11 @@ from typing import Tuple, Optional
 class AudioProcessor:
     """Class for processing audio data"""
     
-    def __init__(self, sample_rate: int = 44100):
+    def __init__(self, sample_rate: int = 22050):
         """Initialize audio processor
         
         Args:
-            sample_rate: Sample rate in Hz (default 44100)
+            sample_rate: Sample rate in Hz (default 22050 — sufficient for pitch detection)
         """
         self.sample_rate = sample_rate
         self.recording = None

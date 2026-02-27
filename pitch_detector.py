@@ -18,6 +18,8 @@ class PitchDetector:
         """
         self.sample_rate = sample_rate
         self.hop_length = 512
+        # Use lower sample rate for pitch detection (2x faster)
+        self._detect_sr = 22050
         
     def detect_pitch(self, audio: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Detect pitch in audio signal
@@ -28,11 +30,19 @@ class PitchDetector:
         Returns:
             Tuple (frequencies, times)
         """
+        # Downsample for faster pyin if input is at higher sample rate
+        if self.sample_rate > self._detect_sr:
+            audio_ds = librosa.resample(audio, orig_sr=self.sample_rate, target_sr=self._detect_sr)
+            sr_used = self._detect_sr
+        else:
+            audio_ds = audio
+            sr_used = self.sample_rate
+
         f0, voiced_flag, voiced_probs = librosa.pyin(
-            audio,
+            audio_ds,
             fmin=librosa.note_to_hz('E2'),
             fmax=librosa.note_to_hz('E6'),
-            sr=self.sample_rate,
+            sr=sr_used,
             hop_length=self.hop_length,
             frame_length=2048
         )
@@ -44,7 +54,7 @@ class PitchDetector:
         f0 = self._smooth_f0(f0)
         times = librosa.frames_to_time(
             np.arange(len(f0)),
-            sr=self.sample_rate,
+            sr=sr_used,
             hop_length=self.hop_length
         )
         return f0, times, voiced_probs
@@ -107,7 +117,7 @@ class PitchDetector:
             all_notes = []
             for start in range(0, len(audio), hop):
                 segment = audio[start:start + hop]
-                if segment.size == 0:
+                if segment.size < 2048:
                     continue
                 offset = start / self.sample_rate
                 segment_notes = self._extract_notes_from_segment(

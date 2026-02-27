@@ -53,8 +53,8 @@ class GuitarTabApp(tk.Tk):
         self.minsize(1100, 700)
         self.configure(bg=BG)
 
-        self.audio_proc = AudioProcessor()
-        self.pitch_det = PitchDetector()
+        self.audio_proc = AudioProcessor(sample_rate=22050)
+        self.pitch_det = PitchDetector(sample_rate=22050)
         self.tab_gen = GuitarTabGenerator()
         self.audio_data = None
         self._loaded_path: str | None = None

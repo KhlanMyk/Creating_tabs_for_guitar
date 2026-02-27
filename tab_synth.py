@@ -32,26 +32,31 @@ def _midi_to_hz(midi: int) -> float:
 
 
 def _karplus_strong(freq: float, duration: float, sample_rate: int, decay: float = 0.996) -> np.ndarray:
-    """Generate plucked-string audio for one note."""
+    """Generate plucked-string audio for one note (vectorised)."""
     n_samples = max(1, int(duration * sample_rate))
     period = max(2, int(sample_rate / max(freq, 1e-6)))
 
-    buf = np.random.uniform(-1.0, 1.0, period).astype(np.float32)
-    out = np.zeros(n_samples, dtype=np.float32)
+    buf = np.random.uniform(-1.0, 1.0, period).astype(np.float64)
+    out = np.empty(n_samples, dtype=np.float64)
 
-    idx = 0
-    for i in range(n_samples):
-        out[i] = buf[idx]
-        nxt = (idx + 1) % period
-        buf[idx] = decay * 0.5 * (buf[idx] + buf[nxt])
-        idx = nxt
+    # Process in chunks of `period` for better performance
+    pos = 0
+    while pos < n_samples:
+        chunk = min(period, n_samples - pos)
+        out[pos:pos + chunk] = buf[:chunk]
+        # Apply averaging filter to the whole buffer at once
+        shifted = np.roll(buf, -1)
+        buf[:] = decay * 0.5 * (buf + shifted)
+        pos += chunk
+
+    out = out.astype(np.float32)
 
     # quick envelope for cleaner transients
     attack = int(0.003 * sample_rate)
     release = int(0.03 * sample_rate)
-    if attack > 1 and attack < n_samples:
+    if 1 < attack < n_samples:
         out[:attack] *= np.linspace(0.0, 1.0, attack, dtype=np.float32)
-    if release > 1 and release < n_samples:
+    if 1 < release < n_samples:
         out[-release:] *= np.linspace(1.0, 0.0, release, dtype=np.float32)
 
     return out

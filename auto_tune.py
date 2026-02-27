@@ -27,12 +27,12 @@ def find_best_extraction(
     probs: Optional[List[float]] = None,
     segments: Optional[List[float]] = None,
     use_harmonic: bool = True,
-    preview_seconds: float = 45.0,
+    preview_seconds: float = 30.0,
 ) -> TuneResult:
     """Search a small parameter grid and return best extraction result."""
-    durations = durations or [0.02, 0.03, 0.04]
-    probs = probs or [0.15, 0.20, 0.25]
-    segments = segments or [6.0, 8.0, 10.0]
+    durations = durations or [0.025, 0.04]
+    probs = probs or [0.15, 0.25]
+    segments = segments or [8.0, 12.0]
 
     duration_sec = len(audio) / detector.sample_rate if detector.sample_rate else 1.0
     preview_len = int(min(duration_sec, preview_seconds) * detector.sample_rate)

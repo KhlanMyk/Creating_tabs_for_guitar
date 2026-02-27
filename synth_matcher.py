@@ -105,10 +105,10 @@ def optimize_synth_against_original(
 
     coarse_grid: Dict[str, List[float | int]] = {
         "step_seconds": [0.11, 0.14, 0.17],
-        "note_seconds": [0.14, 0.19, 0.24],
-        "decay": [0.993, 0.996, 0.998],
-        "gain": [0.28, 0.38, 0.48],
-        "transpose_semitones": [-2, -1, 0, 1, 2],
+        "note_seconds": [0.15, 0.22],
+        "decay": [0.994, 0.997],
+        "gain": [0.30, 0.45],
+        "transpose_semitones": [-1, 0, 1],
     }
 
     best_score = -1e9
@@ -141,8 +141,8 @@ def optimize_synth_against_original(
     refine_steps = [max(0.08, step0 - 0.015), step0, min(0.22, step0 + 0.015)]
     refine_notes = [max(0.10, note0 - 0.02), note0, min(0.30, note0 + 0.02)]
     refine_decays = [max(0.990, decay0 - 0.001), decay0, min(0.999, decay0 + 0.001)]
-    refine_gains = [max(0.15, gain0 - 0.06), gain0, min(0.65, gain0 + 0.06)]
-    refine_trans = sorted(set([trans0 - 1, trans0, trans0 + 1]))
+    refine_gains = [max(0.15, gain0 - 0.05), gain0, min(0.65, gain0 + 0.05)]
+    refine_trans = [trans0]
 
     for step, note, decay, gain, trans in product(
         refine_steps,
