@@ -28,6 +28,7 @@ def find_best_extraction(
     segments: Optional[List[float]] = None,
     use_harmonic: bool = True,
     preview_seconds: float = 30.0,
+    progress_callback: object = None,
 ) -> TuneResult:
     """Search a small parameter grid and return best extraction result."""
     durations = durations or [0.025, 0.04]
@@ -39,7 +40,12 @@ def find_best_extraction(
     preview_audio = audio[:preview_len] if preview_len > 0 else audio
     best: Optional[TuneResult] = None
 
-    for md, mp, seg in product(durations, probs, segments):
+    combos = list(product(durations, probs, segments))
+    total = len(combos) + 1  # +1 for final full run
+
+    for i, (md, mp, seg) in enumerate(combos):
+        if progress_callback:
+            progress_callback(i / total, f"Testing combo {i+1}/{len(combos)}")
         notes = detector.extract_notes_from_audio(
             preview_audio,
             min_duration=md,
@@ -69,6 +75,8 @@ def find_best_extraction(
     assert best is not None
 
     # Run once on full audio with best params
+    if progress_callback:
+        progress_callback((total - 1) / total, "Final pass with best params...")
     final_notes = detector.extract_notes_from_audio(
         audio,
         min_duration=best.min_duration,

@@ -80,6 +80,12 @@ class GuitarTabApp(tk.Tk):
         s.configure("TEntry", fieldbackground=ENTRY_BG, foreground=TEXT)
         s.configure("TCheckbutton", background=CARD_BG, foreground=TEXT)
 
+        # progress bar style
+        s.configure("Custom.Horizontal.TProgressbar",
+                     troughcolor=ENTRY_BG, background=SEC_PROCESS,
+                     darkcolor=SEC_PROCESS, lightcolor=SEC_PROCESS_HOVER,
+                     bordercolor=BORDER, thickness=14)
+
     # ── layout ──────────────────────────────────────────
     def _build_ui(self):
         # ── sidebar (scrollable) ─────────────────────────
@@ -221,6 +227,25 @@ class GuitarTabApp(tk.Tk):
         tk.Label(info_bar, textvariable=self.file_info_var, fg=MUTED, bg=BG,
                  font=("Helvetica", 11)).pack(side=tk.LEFT)
 
+        # ── progress bar ────────────────────────────────
+        self._progress_frame = tk.Frame(main, bg=BG)
+        self._progress_frame.pack(fill=tk.X, padx=20, pady=(6, 0))
+
+        self._progress_var = tk.DoubleVar(value=0.0)
+        self._progress_label = tk.StringVar(value="")
+
+        self._progress_bar = ttk.Progressbar(
+            self._progress_frame, variable=self._progress_var,
+            maximum=1.0, mode="determinate", length=400,
+            style="Custom.Horizontal.TProgressbar")
+
+        self._progress_lbl_widget = tk.Label(
+            self._progress_frame, textvariable=self._progress_label,
+            fg=MUTED, bg=BG, font=("Helvetica", 10), anchor="w")
+
+        # starts hidden
+        self._progress_visible = False
+
         # ── tab display (canvas with scrollbar) ─────────
         tab_frame = tk.Frame(main, bg=TAB_BG, highlightbackground=BORDER, highlightthickness=1)
         tab_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 20))
@@ -305,7 +330,10 @@ class GuitarTabApp(tk.Tk):
         )
 
     def _render_tabs_on_canvas(self, tabs_text: str):
-        """Draw the tab text onto the canvas with coloured formatting."""
+        """Draw the tab text onto the canvas with coloured formatting.
+
+        Uses bulk text items per line segment (not per-character) for speed.
+        """
         self.tab_canvas.delete("all")
         self._raw_tabs_text = tabs_text
 
@@ -331,32 +359,36 @@ class GuitarTabApp(tk.Tk):
                                             fill=TAB_ACCENT, font=chord_font)
                 y += line_height + 2
             elif is_string_line:
-                # string name in accent
+                # Group consecutive same-colour characters into spans
+                # string name (first 2 chars)
                 self.tab_canvas.create_text(pad_x, y, text=line[:2], anchor="nw",
                                             fill=ACCENT, font=tab_font)
                 x = pad_x + tab_font.measure(line[:2])
-                i = 2
-                while i < len(line):
-                    ch = line[i]
+
+                # classify rest of line into colour spans
+                spans: list[tuple[str, str]] = []  # (text, colour)
+                buf = ""
+                buf_colour = ""
+                for ch in line[2:]:
                     if ch.isdigit():
-                        j = i
-                        while j < len(line) and line[j].isdigit():
-                            j += 1
-                        num_str = line[i:j]
-                        self.tab_canvas.create_text(x, y, text=num_str, anchor="nw",
-                                                    fill="#ffffff", font=tab_font)
-                        x += tab_font.measure(num_str)
-                        i = j
+                        colour = "#ffffff"
                     elif ch == "|":
-                        self.tab_canvas.create_text(x, y, text=ch, anchor="nw",
-                                                    fill=ACCENT, font=tab_font)
-                        x += tab_font.measure(ch)
-                        i += 1
+                        colour = ACCENT
                     else:
-                        self.tab_canvas.create_text(x, y, text=ch, anchor="nw",
-                                                    fill="#2a3a5a", font=tab_font)
-                        x += tab_font.measure(ch)
-                        i += 1
+                        colour = "#2a3a5a"
+                    if colour != buf_colour and buf:
+                        spans.append((buf, buf_colour))
+                        buf = ""
+                    buf += ch
+                    buf_colour = colour
+                if buf:
+                    spans.append((buf, buf_colour))
+
+                for text, colour in spans:
+                    self.tab_canvas.create_text(x, y, text=text, anchor="nw",
+                                                fill=colour, font=tab_font)
+                    x += tab_font.measure(text)
+
                 max_x = max(max_x, x + 40)
                 y += line_height
             else:
@@ -368,8 +400,45 @@ class GuitarTabApp(tk.Tk):
 
     # ── status / property helpers ───────────────────────
     def set_status(self, text: str):
+        """Thread-safe status update."""
+        self.after(0, lambda: self._do_set_status(text))
+
+    def _do_set_status(self, text: str):
         self.status_var.set(text)
-        self.update_idletasks()
+
+    def _show_progress(self, fraction: float = 0.0, message: str = ""):
+        """Thread-safe progress update. Called from background threads."""
+        self.after(0, lambda: self._do_show_progress(fraction, message))
+
+    def _do_show_progress(self, fraction: float, message: str):
+        if not self._progress_visible:
+            self._progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self._progress_lbl_widget.pack(side=tk.LEFT, padx=(10, 0))
+            self._progress_visible = True
+        self._progress_var.set(max(0.0, min(1.0, fraction)))
+        self._progress_label.set(message)
+
+    def _hide_progress(self):
+        """Thread-safe hide progress bar."""
+        self.after(0, self._do_hide_progress)
+
+    def _do_hide_progress(self):
+        if self._progress_visible:
+            self._progress_bar.pack_forget()
+            self._progress_lbl_widget.pack_forget()
+            self._progress_visible = False
+            self._progress_var.set(0.0)
+            self._progress_label.set("")
+
+    def _run_task(self, task_func):
+        """Run a function in a background thread with progress support."""
+        self._show_progress(0.0, "Starting...")
+        def wrapper():
+            try:
+                task_func()
+            finally:
+                self._hide_progress()
+        threading.Thread(target=wrapper, daemon=True).start()
 
     @property
     def duration_var(self):
@@ -403,16 +472,20 @@ class GuitarTabApp(tk.Tk):
         if not file_path:
             return
         self.set_status("Loading...")
+        self._show_progress(0.5, "Loading audio file...")
         try:
             audio, _ = self.audio_proc.load_audio_file(file_path)
             self.audio_data = audio
             self._loaded_path = file_path
             name = os.path.basename(file_path)
-            self.file_info_var.set(f"  {name}  ({len(audio)/44100:.1f}s)")
+            sr = self.audio_proc.sample_rate
+            self.file_info_var.set(f"  {name}  ({len(audio)/sr:.1f}s)")
             self.set_status("Audio loaded")
         except Exception as exc:
             self.set_status("Load failed")
             messagebox.showerror("Error", str(exc))
+        finally:
+            self._hide_progress()
 
     def on_record(self):
         try:
@@ -422,6 +495,7 @@ class GuitarTabApp(tk.Tk):
             return
         def task():
             self.set_status("Recording...")
+            self._show_progress(0.0, f"Recording {duration:.0f}s...")
             try:
                 self.audio_data = self.audio_proc.record_from_microphone(duration)
                 self._loaded_path = None
@@ -429,8 +503,8 @@ class GuitarTabApp(tk.Tk):
                 self.set_status("Recording complete")
             except Exception as exc:
                 self.set_status("Recording failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_analyze(self):
         if self.audio_data is None:
@@ -452,15 +526,17 @@ class GuitarTabApp(tk.Tk):
                 notes = self.pitch_det.extract_notes_from_audio(
                     self.audio_data, min_duration=min_dur, min_voiced_prob=min_voiced,
                     use_harmonic=self.use_harmonic_var.get(), segment_seconds=seg,
+                    progress_callback=lambda f, m: self._show_progress(f * 0.9, m),
                 )
+                self._show_progress(0.95, "Generating tabs...")
                 self.tab_gen.generate_tabs(notes)
                 tabs_text = self.tab_gen.format_tabs_as_text()
                 self.after(0, lambda: self._render_tabs_on_canvas(tabs_text))
                 self.set_status(f"Done - {len(notes)} notes detected")
             except Exception as exc:
                 self.set_status("Analysis failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_best_quality(self):
         if self.audio_data is None:
@@ -475,20 +551,24 @@ class GuitarTabApp(tk.Tk):
         def task():
             self.set_status("Auto-tuning...")
             try:
-                tune = find_best_extraction(self.audio_data, self.pitch_det, use_harmonic=True)
+                tune = find_best_extraction(
+                    self.audio_data, self.pitch_det, use_harmonic=True,
+                    progress_callback=lambda f, m: self._show_progress(f * 0.9, m),
+                )
+                self._show_progress(0.95, "Generating tabs...")
                 self.tab_gen.set_max_fret(max_fret)
                 self.tab_gen.generate_tabs(tune.notes)
                 tabs_text = self.tab_gen.format_tabs_as_text()
                 self.after(0, lambda: self._render_tabs_on_canvas(tabs_text))
-                self.min_duration_var.set(str(tune.min_duration))
-                self.min_voiced_var.set(str(tune.min_voiced_prob))
-                self.segment_var.set(str(tune.segment_seconds))
-                self.use_harmonic_var.set(tune.use_harmonic)
+                self.after(0, lambda: self.min_duration_var.set(str(tune.min_duration)))
+                self.after(0, lambda: self.min_voiced_var.set(str(tune.min_voiced_prob)))
+                self.after(0, lambda: self.segment_var.set(str(tune.segment_seconds)))
+                self.after(0, lambda: self.use_harmonic_var.set(tune.use_harmonic))
                 self.set_status(f"Best quality - {len(tune.notes)} notes")
             except Exception as exc:
                 self.set_status("Auto-tune failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_refine_with_original(self):
         tabs_text = self._get_tabs_text()
@@ -510,8 +590,8 @@ class GuitarTabApp(tk.Tk):
                 self.set_status(f"Refined: {result.changes_count} changes, step={result.estimated_step_seconds:.3f}s")
             except Exception as exc:
                 self.set_status("Refine failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_check_tabs(self):
         tabs_text = self._get_tabs_text()
@@ -530,18 +610,18 @@ class GuitarTabApp(tk.Tk):
             try:
                 r = check_tabs_against_original(tabs_text=tabs_text, original_audio_path=original_path)
                 self.set_status(f"overall={r.overall_score:.4f}  chroma={r.chroma_score:.4f}  onset={r.onset_score:.4f}")
-                messagebox.showinfo("Tabs Check", "\n".join([
+                self.after(0, lambda: messagebox.showinfo("Tabs Check", "\n".join([
                     f"Overall score:  {r.overall_score:.4f}",
                     f"Chroma score:   {r.chroma_score:.4f}",
                     f"Onset score:    {r.onset_score:.4f}",
                     f"Est. step:      {r.estimated_step_seconds:.3f}s",
                     f"Est. note:      {r.estimated_note_seconds:.3f}s",
                     f"Analyzed:       {r.analyzed_seconds:.1f}s",
-                ]))
+                ])))
             except Exception as exc:
                 self.set_status("Check failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_render_audio(self):
         tabs_text = self._get_tabs_text()
@@ -562,8 +642,8 @@ class GuitarTabApp(tk.Tk):
                 self.set_status(f"Rendered: {result.notes_count} notes, {result.duration:.1f}s")
             except Exception as exc:
                 self.set_status("Render failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_match_original(self):
         tabs_text = self._get_tabs_text()
@@ -592,8 +672,8 @@ class GuitarTabApp(tk.Tk):
                 self.set_status(f"Matched: score={result.score:.4f}")
             except Exception as exc:
                 self.set_status("Match failed")
-                messagebox.showerror("Error", str(exc))
-        threading.Thread(target=task, daemon=True).start()
+                self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+        self._run_task(task)
 
     def on_save(self):
         tabs_text = self._get_tabs_text()

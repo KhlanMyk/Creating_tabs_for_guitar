@@ -98,6 +98,7 @@ class PitchDetector:
         merge_gap: float = 0.05,
         use_harmonic: bool = False,
         segment_seconds: float | None = None,
+        progress_callback: object = None,
     ) -> List[dict]:
         """Extract notes from audio signal.
 
@@ -108,17 +109,22 @@ class PitchDetector:
             merge_gap: Merge notes separated by small gaps
             use_harmonic: Use harmonic component for detection
             segment_seconds: Process audio in segments (seconds)
+            progress_callback: Optional callable(fraction, message) for progress updates
 
         Returns:
             List of note dictionaries
         """
         if segment_seconds and segment_seconds > 0:
             hop = int(self.sample_rate * segment_seconds)
+            starts = [s for s in range(0, len(audio), hop)]
+            total = len(starts)
             all_notes = []
-            for start in range(0, len(audio), hop):
+            for idx, start in enumerate(starts):
                 segment = audio[start:start + hop]
                 if segment.size < 2048:
                     continue
+                if progress_callback:
+                    progress_callback(idx / max(total, 1), f"Segment {idx+1}/{total}")
                 offset = start / self.sample_rate
                 segment_notes = self._extract_notes_from_segment(
                     segment,
@@ -128,6 +134,8 @@ class PitchDetector:
                     use_harmonic=use_harmonic,
                 )
                 all_notes.extend(segment_notes)
+            if progress_callback:
+                progress_callback(1.0, "Merging notes...")
             return self._merge_adjacent_notes(all_notes, merge_gap=merge_gap)
 
         notes = self._extract_notes_from_segment(
