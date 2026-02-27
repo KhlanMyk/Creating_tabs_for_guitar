@@ -53,6 +53,7 @@ def find_best_extraction(
             merge_gap=0.03,
             use_harmonic=use_harmonic,
             segment_seconds=seg,
+            use_onset_alignment=True,
         )
         count = len(notes)
         preview_duration_sec = len(preview_audio) / detector.sample_rate if detector.sample_rate else 1.0
@@ -84,6 +85,7 @@ def find_best_extraction(
         merge_gap=0.03,
         use_harmonic=best.use_harmonic,
         segment_seconds=best.segment_seconds,
+        use_onset_alignment=True,
     )
 
     return TuneResult(
