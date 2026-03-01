@@ -10,7 +10,7 @@ from self_test import run_sine_test
 from synth_matcher import optimize_synth_against_original
 from tab_checker import check_tabs_against_original
 from tab_refiner import refine_tabs_with_original
-from tab_synth import synthesize_from_tabs_file
+from tab_synth import synthesize_from_tabs_file, synthesize_from_timed_events
 
 
 def main():
@@ -209,20 +209,27 @@ def main():
             min_voiced_prob=args.min_voiced_prob,
             use_harmonic=args.use_harmonic,
             segment_seconds=args.segment_seconds,
+            use_onset_alignment=True,
         )
     print(f"Notes found: {len(notes)}")
 
     print("\nGenerating tabs...")
     tab_gen.generate_tabs(notes)
+    timed_events = tab_gen.get_timed_events()
     print("\n" + tab_gen.format_tabs_as_text())
 
     if args.output:
         tab_gen.save_tabs_to_file(args.output)
+        # Also save timed JSON for rhythm-aware playback
+        timed_path = args.output.rsplit(".", 1)[0] + "_timed.json"
+        tab_gen.save_timed_tabs_to_file(timed_path)
     else:
         save = input("\nSave tabs to file? (y/n): ").strip().lower()
         if save == "y":
             filename = input("Filename (default: tabs.txt): ").strip() or "tabs.txt"
             tab_gen.save_tabs_to_file(filename)
+            timed_path = filename.rsplit(".", 1)[0] + "_timed.json"
+            tab_gen.save_timed_tabs_to_file(timed_path)
 
     print("\nDone!")
 
