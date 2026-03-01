@@ -21,13 +21,17 @@ def run_sine_test(
     detector: PitchDetector,
     freq: float = 440.0,
     duration: float = 1.0,
-    sample_rate: int = 44100,
+    sample_rate: int | None = None,
 ) -> TestResult:
     """Generate a sine wave and verify detected note."""
-    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    sr = sample_rate or detector.sample_rate
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     audio = 0.5 * np.sin(2 * np.pi * freq * t)
 
-    notes = detector.extract_notes_from_audio(audio)
+    # Pure sine has no transients → use legacy (non-onset) path
+    notes = detector.extract_notes_from_audio(
+        audio, use_onset_alignment=False, min_voiced_prob=0.3,
+    )
     detected_note = notes[0]["note"] if notes else None
     expected_note = "A4"
 
