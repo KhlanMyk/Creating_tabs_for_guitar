@@ -99,7 +99,7 @@ class GuitarTabGenerator:
 
         return self.tabs
 
-    # ── timing-aware exports ────────────────────────────
+    #  timing-aware exports 
     def get_timed_events(self) -> List[dict]:
         """Return flat list of timed tab events for synthesis.
 
@@ -116,7 +116,7 @@ class GuitarTabGenerator:
         """Deserialise timed events from JSON."""
         return json.loads(json_str)
 
-    # ── chord guessing ──────────────────────────────────
+    #  chord guessing
     def _guess_chord(self, notes_at_time: List[str]) -> Optional[str]:
         if not notes_at_time:
             return None
@@ -149,7 +149,7 @@ class GuitarTabGenerator:
                 return v
         return None
 
-    # ── text formatting (professional) ──────────────────
+    #  text formatting (professional)
     def format_tabs_as_text(self) -> str:
         """Format tabs as professional guitar tablature with measures."""
         all_events: List[Tuple[float, int, dict]] = []
