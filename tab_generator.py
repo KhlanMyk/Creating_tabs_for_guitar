@@ -30,6 +30,7 @@ class GuitarTabGenerator:
         self.tabs: Dict[int, List] = {1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
         self.max_fret = max_fret
         self._last_position: Optional[Tuple[int, int]] = None
+        self._hand_center: float = 3.0  # current average fret position
         # Flat list of timed tab events for the synthesiser
         self._timed_events: List[dict] = []
 
@@ -63,6 +64,7 @@ class GuitarTabGenerator:
         """Generate tab positions from note list, preserving timing."""
         self.tabs = {1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
         self._last_position = None
+        self._hand_center = 3.0
         self._timed_events = []
 
         for note_info in notes:
@@ -116,7 +118,7 @@ class GuitarTabGenerator:
         """Deserialise timed events from JSON."""
         return json.loads(json_str)
 
-    #  chord guessing
+    # ── chord guessing (wider database) ──────────────────────────────
     def _guess_chord(self, notes_at_time: List[str]) -> Optional[str]:
         if not notes_at_time:
             return None
@@ -125,29 +127,63 @@ class GuitarTabGenerator:
             pc = n[:-1] if n[-1].isdigit() else n
             pcs.add(pc)
         chord_map = {
+            # Major
             frozenset({"C", "E", "G"}): "C",
-            frozenset({"A", "C", "E"}): "Am",
-            frozenset({"D", "F", "A"}): "Dm",
             frozenset({"D", "F#", "A"}): "D",
             frozenset({"E", "G#", "B"}): "E",
-            frozenset({"E", "G", "B"}): "Em",
-            frozenset({"G", "B", "D"}): "G",
-            frozenset({"G", "B", "D", "F"}): "G7",
-            frozenset({"A", "C#", "E"}): "A",
             frozenset({"F", "A", "C"}): "F",
+            frozenset({"G", "B", "D"}): "G",
+            frozenset({"A", "C#", "E"}): "A",
+            frozenset({"B", "D#", "F#"}): "B",
+            # Minor
+            frozenset({"A", "C", "E"}): "Am",
             frozenset({"B", "D", "F#"}): "Bm",
+            frozenset({"C", "Eb", "G"}): "Cm",
+            frozenset({"D", "F", "A"}): "Dm",
+            frozenset({"E", "G", "B"}): "Em",
+            frozenset({"F", "Ab", "C"}): "Fm",
+            frozenset({"F#", "A", "C#"}): "F#m",
+            frozenset({"G", "Bb", "D"}): "Gm",
+            frozenset({"G#", "B", "D#"}): "G#m",
+            frozenset({"C#", "E", "G#"}): "C#m",
+            # Seventh
+            frozenset({"G", "B", "D", "F"}): "G7",
+            frozenset({"C", "E", "G", "Bb"}): "C7",
+            frozenset({"D", "F#", "A", "C"}): "D7",
+            frozenset({"A", "C#", "E", "G"}): "A7",
+            frozenset({"E", "G#", "B", "D"}): "E7",
+            frozenset({"B", "D#", "F#", "A"}): "B7",
+            # Maj7
             frozenset({"C", "E", "G", "B"}): "Cmaj7",
+            frozenset({"F", "A", "C", "E"}): "Fmaj7",
+            frozenset({"G", "B", "D", "F#"}): "Gmaj7",
+            # Minor 7
+            frozenset({"A", "C", "E", "G"}): "Am7",
+            frozenset({"D", "F", "A", "C"}): "Dm7",
+            frozenset({"E", "G", "B", "D"}): "Em7",
+            # Power chords
             frozenset({"D", "A"}): "D5",
             frozenset({"E", "B"}): "E5",
             frozenset({"A", "E"}): "A5",
+            frozenset({"G", "D"}): "G5",
+            frozenset({"C", "G"}): "C5",
+            frozenset({"F", "C"}): "F5",
+            # Sus
+            frozenset({"A", "D", "E"}): "Asus4",
+            frozenset({"D", "G", "A"}): "Dsus4",
+            frozenset({"E", "A", "B"}): "Esus4",
         }
         fs = frozenset(pcs)
         if fs in chord_map:
             return chord_map[fs]
+        # check subsets (largest first)
+        best_match: Optional[str] = None
+        best_size = 0
         for k, v in chord_map.items():
-            if k.issubset(fs) and len(k) >= 3:
-                return v
-        return None
+            if k.issubset(fs) and len(k) > best_size and len(k) >= 3:
+                best_match = v
+                best_size = len(k)
+        return best_match
 
     #  text formatting (professional)
     def format_tabs_as_text(self) -> str:
