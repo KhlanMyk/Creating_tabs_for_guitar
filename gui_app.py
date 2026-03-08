@@ -36,7 +36,6 @@ from tab_refiner import refine_tabs_with_original
 from self_test import run_sine_test
 from tab_synth import synthesize_from_tabs_text, synthesize_from_timed_events
 
-# ── colour palette ──────────────────────────────────────────────────────────
 BG           = "#0d1117"
 SURFACE      = "#161b22"
 CARD_BG      = "#1c2333"
@@ -101,9 +100,7 @@ def _note_colour(note_name: str) -> str:
 class GuitarTabApp(tk.Tk):
     """Redesigned premium GUI v3 for generating guitar tabs."""
 
-    # ────────────────────────────────────────────────────────────────────────
     #  init
-    # ────────────────────────────────────────────────────────────────────────
     def __init__(self):
         super().__init__()
         self.title("🎸 Guitar Tab Generator")
@@ -127,9 +124,7 @@ class GuitarTabApp(tk.Tk):
         self._build_ui()
         self._bind_shortcuts()
 
-    # ────────────────────────────────────────────────────────────────────────
     #  styles
-    # ────────────────────────────────────────────────────────────────────────
     def _setup_styles(self):
         s = ttk.Style(self)
         try:
@@ -152,9 +147,7 @@ class GuitarTabApp(tk.Tk):
                      darkcolor=SEC_PROCESS, lightcolor=SEC_PROCESS_HOVER,
                      bordercolor=BORDER, thickness=14)
 
-    # ────────────────────────────────────────────────────────────────────────
     #  keyboard shortcuts
-    # ────────────────────────────────────────────────────────────────────────
     def _bind_shortcuts(self):
         """Bind ⌘/Ctrl keyboard shortcuts."""
         mod = "Command" if self.tk.call("tk", "windowingsystem") == "aqua" else "Control"
@@ -166,11 +159,8 @@ class GuitarTabApp(tk.Tk):
         self.bind(f"<{mod}-minus>", lambda e: self._zoom_out())     # ⌘-
         self.bind(f"<{mod}-0>", lambda e: self._zoom_reset())       # ⌘0
 
-    # ────────────────────────────────────────────────────────────────────────
     #  layout builder
-    # ────────────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        # ── sidebar (scoped scroll) ─────────────────────────────────────
         sidebar_outer = tk.Frame(self, bg=SIDEBAR_BG, width=310)
         sidebar_outer.pack(side=tk.LEFT, fill=tk.Y)
         sidebar_outer.pack_propagate(False)
@@ -195,7 +185,6 @@ class GuitarTabApp(tk.Tk):
         sidebar_outer.bind("<Enter>", _enter_sidebar)
         sidebar_outer.bind("<Leave>", _leave_sidebar)
 
-        # ── logo ────────────────────────────────────────────────────────
         logo_frame = tk.Frame(sidebar, bg=SIDEBAR_BG)
         logo_frame.pack(fill=tk.X, padx=20, pady=(20, 6))
         tk.Label(logo_frame, text="🎸  Guitar Tab Generator",
@@ -259,7 +248,6 @@ class GuitarTabApp(tk.Tk):
 
         tk.Frame(sidebar, bg=SIDEBAR_BG, height=16).pack()
 
-        # ── status footer (below sidebar scroll) ───────────────────────
         self.status_var = tk.StringVar(value="Ready")
         self._status_color = SUCCESS
         status_frame = tk.Frame(sidebar_outer, bg="#0b0e17")
@@ -272,7 +260,6 @@ class GuitarTabApp(tk.Tk):
                                     anchor="w", wraplength=240)
         self._status_lbl.pack(side=tk.LEFT, padx=(0, 16), pady=10)
 
-        # ── main content ────────────────────────────────────────────────
         main = tk.Frame(self, bg=BG)
         main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -283,10 +270,10 @@ class GuitarTabApp(tk.Tk):
         self._param_entries: dict[str, tk.StringVar] = {}
         params = [
             ("Duration (s)", "duration", "5"),
-            ("Min dur", "min_dur", "0.1"),
-            ("Voiced prob", "voiced", "0.75"),
+            ("Min dur", "min_dur", "0.05"),
+            ("Voiced prob", "voiced", "0.3"),
             ("Max fret", "fret", "15"),
-            ("Segment (s)", "segment", "15"),
+            ("Segment (s)", "segment", "12"),
         ]
         for i, (label, key, default) in enumerate(params):
             tk.Label(topbar, text=label, fg=MUTED, bg=CARD_BG,
@@ -313,7 +300,6 @@ class GuitarTabApp(tk.Tk):
         tk.Label(info_bar, textvariable=self.file_info_var, fg=MUTED, bg=BG,
                  font=("Helvetica", 11)).pack(side=tk.LEFT)
 
-        # ── waveform + note timeline ────────────────────────────────────
         viz_frame = tk.Frame(main, bg=BG)
         viz_frame.pack(fill=tk.X, padx=20, pady=(8, 0))
 
@@ -337,7 +323,6 @@ class GuitarTabApp(tk.Tk):
             400, 25, text="Note timeline — analyze audio to see detected notes",
             fill=DIM, font=("Helvetica", 10), anchor="center")
 
-        # ── progress bar ────────────────────────────────────────────────
         self._progress_frame = tk.Frame(main, bg=BG)
         self._progress_frame.pack(fill=tk.X, padx=20, pady=(6, 0))
 
@@ -360,7 +345,6 @@ class GuitarTabApp(tk.Tk):
         self._progress_visible = False
         self._elapsed_timer_id: str | None = None
 
-        # ── note statistics bar ─────────────────────────────────────────
         self._stats_var = tk.StringVar(value="")
         self._stats_frame = tk.Frame(main, bg=BG)
         self._stats_frame.pack(fill=tk.X, padx=20, pady=(2, 0))
@@ -368,7 +352,6 @@ class GuitarTabApp(tk.Tk):
                                    fg=MUTED, bg=BG, font=("Helvetica", 10), anchor="w")
         # hidden initially
 
-        # ── tab toolbar ─────────────────────────────────────────────────
         tb = tk.Frame(main, bg=CARD_BG, highlightbackground=BORDER, highlightthickness=1)
         tb.pack(fill=tk.X, padx=20, pady=(8, 0))
 
@@ -391,7 +374,6 @@ class GuitarTabApp(tk.Tk):
         tk.Label(tb, text="Font:", fg=DIM, bg=CARD_BG,
                  font=("Helvetica", 9)).pack(side=tk.RIGHT, pady=6)
 
-        # ── tab display (canvas with line-numbers gutter) ───────────────
         tab_outer = tk.Frame(main, bg=BORDER, highlightthickness=0)
         tab_outer.pack(fill=tk.BOTH, expand=True, padx=20, pady=(4, 20))
 
@@ -419,19 +401,14 @@ class GuitarTabApp(tk.Tk):
 
         self._draw_placeholder()
 
-        # ── drag & drop ─────────────────────────────────────────────────
         self._setup_dnd()
 
-    # ────────────────────────────────────────────────────────────────────────
     #  sync scrolling for gutter + tab canvas
-    # ────────────────────────────────────────────────────────────────────────
     def _sync_yview(self, *args):
         self.tab_canvas.yview(*args)
         self._gutter.yview(*args)
 
-    # ────────────────────────────────────────────────────────────────────────
     #  drag & drop support
-    # ────────────────────────────────────────────────────────────────────────
     def _setup_dnd(self):
         """Try TkDND for native drag-and-drop, silently skip if unavailable."""
         try:
@@ -453,9 +430,7 @@ class GuitarTabApp(tk.Tk):
         if os.path.isfile(path):
             self._load_file(path)
 
-    # ────────────────────────────────────────────────────────────────────────
     #  widget helpers
-    # ────────────────────────────────────────────────────────────────────────
     def _section_header(self, parent, step_num: str, title: str, color: str, subtitle: str):
         frame = tk.Frame(parent, bg=SIDEBAR_BG)
         frame.pack(fill=tk.X, padx=16, pady=(14, 4))
@@ -509,9 +484,7 @@ class GuitarTabApp(tk.Tk):
             widget.bind("<Enter>", on_enter)
             widget.bind("<Leave>", on_leave)
 
-    # ────────────────────────────────────────────────────────────────────────
     #  tab placeholder / rendering
-    # ────────────────────────────────────────────────────────────────────────
     def _draw_placeholder(self):
         self.tab_canvas.delete("all")
         self._gutter.delete("all")
@@ -605,9 +578,7 @@ class GuitarTabApp(tk.Tk):
         self.tab_canvas.configure(scrollregion=(0, 0, max_x, y + 40))
         self._gutter.configure(scrollregion=(0, 0, 36, y + 40))
 
-    # ────────────────────────────────────────────────────────────────────────
     #  waveform drawing
-    # ────────────────────────────────────────────────────────────────────────
     def _draw_waveform(self):
         """Draw the audio waveform on the waveform canvas."""
         cvs = self._waveform_canvas
@@ -663,9 +634,7 @@ class GuitarTabApp(tk.Tk):
             cvs.create_text(x + 2, h - 4, text=f"{sec}s", anchor="sw",
                             fill=DIM, font=("Menlo", 8))
 
-    # ────────────────────────────────────────────────────────────────────────
     #  note timeline drawing
-    # ────────────────────────────────────────────────────────────────────────
     def _draw_note_timeline(self):
         """Draw coloured blocks for each detected note on the timeline canvas."""
         cvs = self._timeline_canvas
@@ -733,9 +702,7 @@ class GuitarTabApp(tk.Tk):
             x = int(onset / audio_duration * wf_w) if audio_duration > 0 else 0
             wf.create_line(x, 0, x, wf_h, fill="#ffffff20", width=1, dash=(2, 3))
 
-    # ────────────────────────────────────────────────────────────────────────
     #  toolbar actions
-    # ────────────────────────────────────────────────────────────────────────
     def _copy_tabs(self):
         if not self._raw_tabs_text:
             return
@@ -761,9 +728,7 @@ class GuitarTabApp(tk.Tk):
         if self._raw_tabs_text:
             self._render_tabs_on_canvas(self._raw_tabs_text)
 
-    # ────────────────────────────────────────────────────────────────────────
     #  status / progress helpers
-    # ────────────────────────────────────────────────────────────────────────
     def set_status(self, text: str, level: str = "info"):
         """Thread-safe status update with colour level (info/ok/warn/err)."""
         self.after(0, lambda: self._do_set_status(text, level))
@@ -847,9 +812,7 @@ class GuitarTabApp(tk.Tk):
         )
         self._stats_lbl.pack(anchor="w")
 
-    # ────────────────────────────────────────────────────────────────────────
     #  property helpers
-    # ────────────────────────────────────────────────────────────────────────
     @property
     def duration_var(self):
         return self._param_entries["duration"]
@@ -873,9 +836,7 @@ class GuitarTabApp(tk.Tk):
     def _get_tabs_text(self) -> str:
         return self._raw_tabs_text
 
-    # ────────────────────────────────────────────────────────────────────────
     #  file loading (shared between dialog & dnd)
-    # ────────────────────────────────────────────────────────────────────────
     def _load_file(self, file_path: str):
         self.set_status("Loading...", "info")
         self._show_progress(0.5, "Loading audio file...")
@@ -904,9 +865,7 @@ class GuitarTabApp(tk.Tk):
         finally:
             self._hide_progress()
 
-    # ────────────────────────────────────────────────────────────────────────
     #  actions
-    # ────────────────────────────────────────────────────────────────────────
     def on_load(self):
         file_path = filedialog.askopenfilename(
             title="Select audio file",
@@ -1154,13 +1113,15 @@ class GuitarTabApp(tk.Tk):
         def task():
             self.set_status("Running self-test...", "info")
             try:
-                result = run_sine_test()
-                if hasattr(result, "passed") and result.passed:
-                    self.set_status("Self-test passed ✓", "ok")
-                elif hasattr(result, "passed"):
-                    self.set_status("Self-test failed ✗", "err")
+                result = run_sine_test(self.pitch_det)
+                if result.success:
+                    self.set_status(
+                        f"Self-test passed ✓ — detected {result.detected_note} "
+                        f"(expected {result.expected_note})", "ok")
                 else:
-                    self.set_status("Self-test complete", "ok")
+                    self.set_status(
+                        f"Self-test failed ✗ — detected {result.detected_note} "
+                        f"(expected {result.expected_note})", "err")
             except Exception as exc:
                 self.set_status(f"Self-test error: {exc}", "err")
         self._run_task(task)

@@ -24,14 +24,14 @@ _GUITAR_MIDI_HI = 88   # E6
 class PitchDetector:
     """Class for detecting pitch in audio"""
 
-    def __init__(self, sample_rate: int = 44100):
+    def __init__(self, sample_rate: int = 22050):
         self.sample_rate = sample_rate
         self.hop_length = 512
         self._detect_sr = 22050
         # Minimum RMS energy for a note to be valid (relative to track peak)
-        self.min_rms_ratio = 0.015
+        self.min_rms_ratio = 0.012
         # Onset detection sensitivity (lower → more onsets)
-        self.onset_delta = 0.07
+        self.onset_delta = 0.06
 
     # low-level pitch track 
     def detect_pitch(self, audio: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -61,8 +61,12 @@ class PitchDetector:
         )
         return f0, times, voiced_probs
 
-    def _smooth_f0(self, f0: np.ndarray, kernel_size: int = 5) -> np.ndarray:
-        if f0.size == 0:
+    def _smooth_f0(self, f0: np.ndarray, kernel_size: int = 3) -> np.ndarray:
+        """Light median filter to remove single-frame pitch glitches.
+
+        Kernel=3 removes isolated outliers without smearing adjacent notes.
+        """
+        if f0.size < 3:
             return f0
         clean = np.where(np.isfinite(f0), f0, np.nan)
         filled = np.copy(clean)
@@ -83,7 +87,6 @@ class PitchDetector:
         note_name = librosa.midi_to_note(int(round(midi_number)))
         return note_name, int(round(midi_number))
 
-    # ── onset detection helpers ──────────────────────────────────────────
     def _detect_onsets(
         self,
         audio: np.ndarray,
@@ -99,11 +102,16 @@ class PitchDetector:
         onset_env = librosa.onset.onset_strength(
             y=odf_audio, sr=sr, hop_length=self.hop_length,
         )
+        # Use backtrack + reasonable wait to avoid double-triggers
+        min_wait = max(1, int(sr * 0.04 / self.hop_length))
         onset_frames = librosa.onset.onset_detect(
             y=audio, sr=sr, hop_length=self.hop_length,
             onset_envelope=onset_env,
             backtrack=True, units="frames",
-            delta=self.onset_delta, wait=int(sr * 0.03 / self.hop_length),
+            delta=self.onset_delta,
+            wait=min_wait,
+            pre_max=3, post_max=3,
+            pre_avg=3, post_avg=5,
         )
         if onset_frames.size == 0:
             return np.array([0.0], dtype=np.float64)
@@ -114,10 +122,10 @@ class PitchDetector:
     def extract_notes_from_audio(
         self,
         audio: np.ndarray,
-        min_duration: float = 0.08,
-        min_voiced_prob: float = 0.55,
-        merge_gap: float = 0.05,
-        use_harmonic: bool = False,
+        min_duration: float = 0.05,
+        min_voiced_prob: float = 0.25,
+        merge_gap: float = 0.04,
+        use_harmonic: bool = True,
         segment_seconds: float | None = None,
         progress_callback: object = None,
         use_onset_alignment: bool = True,
@@ -169,7 +177,6 @@ class PitchDetector:
         )
         return self._merge_adjacent_notes(notes, merge_gap=merge_gap)
 
-    # ── onset-aligned extraction (primary path) ────────────────────────
     def _extract_onset_aligned(
         self,
         audio: np.ndarray,
@@ -208,6 +215,13 @@ class PitchDetector:
         # 1. Detect onsets – use percussive component for sharper transients
         onset_times = self._detect_onsets(analysis_audio, sr_used,
                                           percussive=percussive)
+
+        # Ensure t=0 is an onset if the audio starts with audible content
+        if len(onset_times) == 0 or onset_times[0] > 0.05:
+            early_rms = float(np.sqrt(np.mean(audio_ds[:int(0.05 * sr_used)] ** 2))) \
+                if len(audio_ds) > int(0.02 * sr_used) else 0.0
+            if early_rms > 1e-5:
+                onset_times = np.concatenate([[0.0], onset_times])
 
         if progress_callback:
             progress_callback(0.20, "Tracking pitch…")
@@ -254,7 +268,6 @@ class PitchDetector:
             if duration < min_duration:
                 continue
 
-            # ── energy gate ────────────────────────────────────
             onset_sample = int(onset_t * sr_used)
             end_sample = min(int(next_t * sr_used), len(audio_ds))
             window_audio = audio_ds[onset_sample:end_sample]
@@ -262,10 +275,21 @@ class PitchDetector:
             if rms < rms_threshold:
                 continue  # too quiet, likely noise
 
-            # ── pitch in this window ──────────────────────────
-            mask = (pitch_times >= onset_t) & (pitch_times < next_t)
+            # Focus pitch analysis on the early part of the window
+            # (first 70% or max 0.3s) where the current note is strongest,
+            # before it decays and the next note's onset encroaches.
+            pitch_end_t = onset_t + min(duration * 0.7, 0.3)
+            pitch_end_t = max(pitch_end_t, onset_t + min(duration, 0.08))  # at least 80ms
+
+            mask = (pitch_times >= onset_t) & (pitch_times < pitch_end_t)
             window_f0 = f0[mask]
             window_probs = voiced_probs[mask] if len(voiced_probs) > 0 else np.array([])
+
+            if len(window_f0) == 0:
+                # Fall back to full window if early window has no data
+                mask = (pitch_times >= onset_t) & (pitch_times < next_t)
+                window_f0 = f0[mask]
+                window_probs = voiced_probs[mask] if len(voiced_probs) > 0 else np.array([])
 
             if len(window_f0) == 0:
                 continue
@@ -279,17 +303,28 @@ class PitchDetector:
             if len(valid_freqs) == 0:
                 continue
 
-            # Probability-weighted mean in MIDI space (more robust than
-            # frequency-space median when there are outlier frames)
+            # Use pitch MODE (most common semitone) rather than weighted
+            # average, which blurs notes when a window spans two pitches.
             valid_midi_raw = librosa.hz_to_midi(valid_freqs)
-            if valid_weights is not None and np.sum(valid_weights) > 1e-9:
-                weighted_midi = float(np.average(valid_midi_raw, weights=valid_weights))
+            rounded_midis = np.round(valid_midi_raw).astype(int)
+
+            # Find the most frequent MIDI note in the window, weighted by
+            # voiced probability if available
+            unique_midis, counts = np.unique(rounded_midis, return_counts=True)
+            if valid_weights is not None and len(valid_weights) == len(rounded_midis):
+                # Sum probability weights for each unique MIDI note
+                weighted_counts = np.zeros_like(counts, dtype=float)
+                for j, um in enumerate(unique_midis):
+                    mask_um = rounded_midis == um
+                    weighted_counts[j] = float(np.sum(valid_weights[mask_um]))
+                best_idx = int(np.argmax(weighted_counts))
             else:
-                weighted_midi = float(np.nanmedian(valid_midi_raw))
+                best_idx = int(np.argmax(counts))
+
+            rounded_midi = int(unique_midis[best_idx])
 
             # Clamp to guitar range
-            weighted_midi = float(np.clip(weighted_midi, _GUITAR_MIDI_LO, _GUITAR_MIDI_HI))
-            rounded_midi = int(round(weighted_midi))
+            rounded_midi = int(np.clip(rounded_midi, _GUITAR_MIDI_LO, _GUITAR_MIDI_HI))
             median_freq = float(librosa.midi_to_hz(rounded_midi))
 
             note_name = librosa.midi_to_note(rounded_midi)
@@ -303,7 +338,7 @@ class PitchDetector:
                 "start_time": float(onset_t),
                 "end_time": float(next_t),
                 "duration": float(duration),
-                "velocity": min(1.0, rms / max(global_rms, 1e-9) * 0.5),
+                "velocity": float(np.clip(rms / max(global_rms, 1e-9), 0.1, 1.0)),
                 "onset": float(onset_t),
             })
 
@@ -322,7 +357,6 @@ class PitchDetector:
 
         return merged
 
-    # ── octave-error correction ─────────────────────────────────────────
     @staticmethod
     def _correct_octave_errors(notes: List[dict], window: int = 5) -> List[dict]:
         """Fix isolated octave jumps (+/- 12 MIDI) relative to local context.

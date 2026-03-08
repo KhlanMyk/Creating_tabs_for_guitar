@@ -50,15 +50,40 @@ class GuitarTabGenerator:
         return positions
 
     def _choose_position(self, positions: List[Tuple[int, int]]) -> Tuple[int, int]:
+        """Pick the best (string, fret) using hand-position-aware scoring.
+
+        Scoring considers:
+          • Distance from current hand centre (lower is better)
+          • Open-string bonus (fret 0 is easy to play)
+          • Stretch penalty (frets far from hand centre)
+          • String-change cost (prefer staying on same/adjacent string)
+        """
         if not positions:
             return (1, 0)
+
         if self._last_position is None:
+            # First note: prefer lowest fret, then lowest string number
             return sorted(positions, key=lambda x: (x[1], x[0]))[0]
+
         last_string, last_fret = self._last_position
-        return sorted(
-            positions,
-            key=lambda x: (abs(x[1] - last_fret), abs(x[0] - last_string), x[1]),
-        )[0]
+        hc = self._hand_center
+
+        def _score(pos: Tuple[int, int]) -> float:
+            s, f = pos
+            # Fret distance from hand centre
+            fret_dist = abs(f - hc)
+            # String change cost
+            string_dist = abs(s - last_string)
+            # Open-string bonus: open strings are easy
+            open_bonus = -1.5 if f == 0 else 0.0
+            # Stretch penalty: big reach from current hand position
+            stretch = max(0.0, fret_dist - 4) * 2.0
+            # Prefer staying near last fret
+            move_cost = abs(f - last_fret) * 0.5
+            return fret_dist + string_dist * 0.8 + open_bonus + stretch + move_cost
+
+        best = min(positions, key=_score)
+        return best
 
     def generate_tabs(self, notes: List[Dict]) -> Dict[int, List]:
         """Generate tab positions from note list, preserving timing."""
@@ -74,6 +99,9 @@ class GuitarTabGenerator:
             positions = self.note_to_tab_positions(note_name)
             string, fret = self._choose_position(positions)
             self._last_position = (string, fret)
+            # Smoothly track hand centre for position-aware scoring
+            if fret > 0:
+                self._hand_center = self._hand_center * 0.7 + fret * 0.3
 
             start_time = note_info.get("start_time", 0.0)
             duration = note_info.get("duration", 0.0)
@@ -118,7 +146,6 @@ class GuitarTabGenerator:
         """Deserialise timed events from JSON."""
         return json.loads(json_str)
 
-    # ── chord guessing (wider database) ──────────────────────────────
     def _guess_chord(self, notes_at_time: List[str]) -> Optional[str]:
         if not notes_at_time:
             return None
