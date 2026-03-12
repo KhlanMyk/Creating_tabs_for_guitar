@@ -155,7 +155,15 @@ def synthesize_from_timed_json(
 #  MODE 2 — Text tabs (legacy fixed-step)
 
 def parse_tabs_text(tab_text: str) -> Tuple[List[List[str]], int]:
-    """Parse generated tabs text into 6-string token grid."""
+    """Parse generated tabs text into 6-string token grid.
+
+    Supports the timing-proportional format where each character is one
+    16th-note slot.  A digit (or pair of digits) = fret number,
+    '-' = rest/silence.
+
+    Returns (grid, cols) where grid is 6 rows (one per string, e→E)
+    and each row has `cols` tokens ('--' for rest, or fret number string).
+    """
     lines = tab_text.splitlines()
 
     groups: List[List[str]] = []
@@ -181,24 +189,33 @@ def parse_tabs_text(tab_text: str) -> Tuple[List[List[str]], int]:
 
     for group in groups:
         for row_idx, ln in enumerate(group):
+            # Extract body between first | and last |
             body = ln.split('|', 1)[1] if '|' in ln else ln
-            body_stripped = body.rstrip('|')
+            # Strip trailing pipe
+            body = body.rstrip('|')
+            # Remove internal measure separators (|)
+            body = body.replace('|', '')
 
-            if '|' in body_stripped:
-                body_clean = body_stripped.replace('|', '')
-                i = 0
-                while i < len(body_clean):
-                    chunk = body_clean[i:i + 3]
-                    digits = ''.join(c for c in chunk if c.isdigit())
-                    if digits:
-                        parsed[row_idx].append(digits)
+            # Parse character by character:
+            # Each '-' is one rest slot.
+            # Digits form fret numbers (1 or 2 digits).
+            i = 0
+            while i < len(body):
+                ch = body[i]
+                if ch == '-':
+                    parsed[row_idx].append('--')
+                    i += 1
+                elif ch.isdigit():
+                    # Check for 2-digit fret
+                    if i + 1 < len(body) and body[i + 1].isdigit():
+                        parsed[row_idx].append(body[i:i + 2])
+                        i += 2
                     else:
-                        parsed[row_idx].append('--')
-                    i += 3
-            else:
-                tokens = re.findall(r'--|-|\d+', body_stripped)
-                tokens = ['--' if t == '-' else t for t in tokens]
-                parsed[row_idx].extend(tokens)
+                        parsed[row_idx].append(ch)
+                        i += 1
+                else:
+                    # Skip unexpected characters
+                    i += 1
 
     max_cols = max(len(row) for row in parsed) if parsed else 0
     for row in parsed:
@@ -212,14 +229,14 @@ def synthesize_from_tabs_text(
     tab_text: str,
     output_path: str,
     sample_rate: int = 44100,
-    step_seconds: float = 0.14,
+    step_seconds: float = 0.125,
     note_seconds: float = 0.18,
     decay: float = 0.996,
     gain: float = 0.35,
     transpose_semitones: int = 0,
     play: bool = False,
 ) -> SynthResult:
-    """Render tabs text to a wav file (legacy fixed-step mode)."""
+    """Render tabs text to a wav file (each column = one 16th-note slot)."""
     audio, notes_count, total_dur = synthesize_audio_array_from_tabs_text(
         tab_text,
         sample_rate=sample_rate,
@@ -246,14 +263,18 @@ def synthesize_from_tabs_text(
 def synthesize_audio_array_from_tabs_text(
     tab_text: str,
     sample_rate: int = 44100,
-    step_seconds: float = 0.14,
+    step_seconds: float = 0.125,
     note_seconds: float = 0.18,
     decay: float = 0.996,
     gain: float = 0.35,
     transpose_semitones: int = 0,
     max_duration_seconds: float | None = None,
 ) -> Tuple[np.ndarray, int, float]:
-    """Render tabs text to an in-memory audio array (fixed-step)."""
+    """Render tabs text to an in-memory audio array.
+
+    In the timing-proportional format each column is one 16th-note slot.
+    step_seconds defaults to 0.125s (~120 BPM with 4 slots per beat).
+    """
     grid, cols = parse_tabs_text(tab_text)
 
     if max_duration_seconds is not None and max_duration_seconds > 0:
@@ -292,7 +313,7 @@ def synthesize_from_tabs_file(
     tabs_path: str,
     output_path: str,
     sample_rate: int = 44100,
-    step_seconds: float = 0.14,
+    step_seconds: float = 0.125,
     note_seconds: float = 0.18,
     decay: float = 0.996,
     gain: float = 0.35,
