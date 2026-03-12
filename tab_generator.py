@@ -12,6 +12,7 @@ import json
 from typing import List, Dict, Tuple, Optional
 
 import librosa
+import numpy as np
 
 
 class GuitarTabGenerator:
@@ -57,6 +58,8 @@ class GuitarTabGenerator:
           • Open-string bonus (fret 0 is easy to play)
           • Stretch penalty (frets far from hand centre)
           • String-change cost (prefer staying on same/adjacent string)
+          • Low-fret preference (lower positions are generally easier)
+          • String comfort (middle strings slightly preferred)
         """
         if not positions:
             return (1, 0)
@@ -75,12 +78,17 @@ class GuitarTabGenerator:
             # String change cost
             string_dist = abs(s - last_string)
             # Open-string bonus: open strings are easy
-            open_bonus = -1.5 if f == 0 else 0.0
+            open_bonus = -2.0 if f == 0 else 0.0
+            # Low-fret preference: positions 0-5 are most comfortable
+            low_fret_bonus = -0.3 * max(0, 5 - f)
             # Stretch penalty: big reach from current hand position
-            stretch = max(0.0, fret_dist - 4) * 2.0
+            stretch = max(0.0, fret_dist - 4) * 2.5
             # Prefer staying near last fret
             move_cost = abs(f - last_fret) * 0.5
-            return fret_dist + string_dist * 0.8 + open_bonus + stretch + move_cost
+            # Slight preference for middle strings (easier ergonomics)
+            string_comfort = abs(s - 3.5) * 0.15
+            return (fret_dist + string_dist * 0.8 + open_bonus
+                    + low_fret_bonus + stretch + move_cost + string_comfort)
 
         best = min(positions, key=_score)
         return best
@@ -212,9 +220,36 @@ class GuitarTabGenerator:
                 best_size = len(k)
         return best_match
 
-    #  text formatting (professional)
+    #  text formatting (professional, timing-aware)
+
+    def _estimate_bpm(self) -> float:
+        """Estimate BPM from note onset intervals."""
+        if len(self._timed_events) < 2:
+            return 120.0
+        onsets = sorted(e["start_time"] for e in self._timed_events)
+        intervals = np.diff(onsets)
+        intervals = intervals[(intervals > 0.1) & (intervals < 2.0)]
+        if len(intervals) == 0:
+            return 120.0
+        median_interval = float(np.median(intervals))
+        bpm = 60.0 / max(median_interval, 0.15)
+        # Snap to reasonable range
+        bpm = max(40.0, min(240.0, bpm))
+        return bpm
+
+    def _quantize_to_grid(self, time_val: float, beat_dur: float) -> float:
+        """Quantize a time value to the nearest 16th-note grid position."""
+        sixteenth = beat_dur / 4.0
+        return round(time_val / sixteenth) * sixteenth
+
     def format_tabs_as_text(self) -> str:
-        """Format tabs as professional guitar tablature with measures."""
+        """Format tabs as professional guitar tablature with timing-proportional spacing.
+
+        - Each dash '-' represents a 16th-note time slot
+        - Rests (silence) are properly shown as dashes
+        - Measures are aligned to actual beats (4 beats per measure)
+        - Note durations are shown by the gap until the next note on that string
+        """
         all_events: List[Tuple[float, int, dict]] = []
         for string_num, tab_list in self.tabs.items():
             for tab in tab_list:
@@ -223,61 +258,126 @@ class GuitarTabGenerator:
         if not all_events:
             return "No tabs generated"
 
-        all_times = sorted({e[0] for e in all_events})
+        # Estimate BPM and beat duration
+        bpm = self._estimate_bpm()
+        beat_dur = 60.0 / bpm
+        sixteenth = beat_dur / 4.0
 
-        columns: List[Dict[int, str]] = []
-        chord_labels: List[Optional[str]] = []
-        for t in all_times:
-            col: Dict[int, str] = {}
-            notes_here: List[str] = []
+        # Get total time span
+        min_time = min(e[0] for e in all_events)
+        max_time = max(e[0] + e[2].get("duration", 0.1) for e in all_events)
+
+        # Quantize start so first note aligns to grid
+        grid_start = self._quantize_to_grid(min_time, beat_dur)
+
+        # Total number of 16th-note slots needed
+        total_sixteenths = max(1, int(np.ceil((max_time - grid_start) / sixteenth)) + 1)
+
+        # Cap at reasonable length
+        total_sixteenths = min(total_sixteenths, 512)
+
+        # Build a grid: for each string, a list of slot contents
+        # Each slot is either None (rest) or a fret number string
+        string_grid: Dict[int, List[Optional[str]]] = {}
+        for s in range(1, 7):
+            string_grid[s] = [None] * total_sixteenths
+
+        # Place notes on the grid
+        for ev_time, string_num, tab in all_events:
+            slot = int(round((ev_time - grid_start) / sixteenth))
+            slot = max(0, min(slot, total_sixteenths - 1))
+            string_grid[string_num][slot] = str(tab["fret"])
+
+        # Build chord labels per slot
+        chord_at_slot: Dict[int, Optional[str]] = {}
+        for slot_idx in range(total_sixteenths):
+            notes_here = []
             for ev_t, s, tab in all_events:
-                if abs(ev_t - t) < 0.01:
-                    col[s] = str(tab["fret"])
+                ev_slot = int(round((ev_t - grid_start) / sixteenth))
+                if ev_slot == slot_idx:
                     notes_here.append(tab["note"])
-            columns.append(col)
-            chord_labels.append(self._guess_chord(notes_here))
+            if notes_here:
+                chord_at_slot[slot_idx] = self._guess_chord(notes_here)
+            else:
+                chord_at_slot[slot_idx] = None
 
+        # Format into measures (4 beats = 16 sixteenth-note slots per measure)
+        slots_per_measure = 16
         beats_per_measure = 4
-        measures: List[List[int]] = []
-        for i in range(0, len(columns), beats_per_measure):
-            measures.append(list(range(i, min(i + beats_per_measure, len(columns)))))
+        slots_per_beat = 4
 
-        measures_per_line = 4
-        lines_of_measures: List[List[List[int]]] = []
-        for i in range(0, len(measures), measures_per_line):
-            lines_of_measures.append(measures[i : i + measures_per_line])
+        num_measures = max(1, (total_sixteenths + slots_per_measure - 1) // slots_per_measure)
+        measures_per_line = 2  # 2 measures per text line for readability
 
-        output: List[str] = []
         string_names = ["e", "B", "G", "D", "A", "E"]
+        output: List[str] = []
 
-        for line_measures in lines_of_measures:
-            chord_line = "    "
-            for mi, measure_cols in enumerate(line_measures):
-                for ci in measure_cols:
-                    lbl = chord_labels[ci] if ci < len(chord_labels) else None
-                    if lbl:
-                        chord_line += f"{lbl:<4}"
+        for line_start in range(0, num_measures, measures_per_line):
+            line_end = min(line_start + measures_per_line, num_measures)
+
+            # Build beat markers line (shows beat positions)
+            beat_line = "  "
+            for m_idx in range(line_start, line_end):
+                for beat in range(beats_per_measure):
+                    beat_num = beat + 1
+                    beat_line += str(beat_num)
+                    # Fill remaining slots in this beat with spaces
+                    beat_line += " " * (slots_per_beat - 1)
+                beat_line += " "  # measure separator space
+            beat_line = beat_line.rstrip()
+            if beat_line.strip():
+                output.append(beat_line)
+
+            # Build chord line
+            chord_line = "  "
+            for m_idx in range(line_start, line_end):
+                m_start_slot = m_idx * slots_per_measure
+                last_chord = None
+                for slot_offset in range(slots_per_measure):
+                    abs_slot = m_start_slot + slot_offset
+                    if abs_slot < total_sixteenths:
+                        ch = chord_at_slot.get(abs_slot)
+                        if ch and ch != last_chord:
+                            chord_line += ch
+                            pad = max(0, 1 - len(ch))
+                            chord_line += " " * pad
+                            last_chord = ch
+                        else:
+                            chord_line += " "
                     else:
-                        chord_line += "    "
-                if mi < len(line_measures) - 1:
-                    chord_line += " "
+                        chord_line += " "
+                chord_line += " "
             chord_line = chord_line.rstrip()
             if chord_line.strip():
                 output.append(chord_line)
 
+            # Build string lines
             for row, string_num in enumerate(range(1, 7)):
                 line = f"{string_names[row]}|"
-                for mi, measure_cols in enumerate(line_measures):
-                    for ci in measure_cols:
-                        col = columns[ci] if ci < len(columns) else {}
-                        fret_str = col.get(string_num, "-")
-                        if len(fret_str) == 1:
-                            line += f"-{fret_str}-"
+                for m_idx in range(line_start, line_end):
+                    m_start_slot = m_idx * slots_per_measure
+                    for slot_offset in range(slots_per_measure):
+                        abs_slot = m_start_slot + slot_offset
+                        if abs_slot < total_sixteenths:
+                            fret_val = string_grid[string_num][abs_slot]
+                            if fret_val is not None:
+                                line += fret_val
+                                # Double-digit frets take 2 chars, so skip
+                                # adding a dash after them
+                                if len(fret_val) == 1:
+                                    pass  # single char, normal
+                            else:
+                                line += "-"
                         else:
-                            line += f"{fret_str}-"
+                            line += "-"
                     line += "|"
                 output.append(line)
             output.append("")
+
+        # Add tempo info at the bottom
+        output.append(f"  Tempo: ~{int(round(bpm))} BPM | "
+                      f"Each '-' = 1/16 note | "
+                      f"{len(self._timed_events)} notes")
 
         return "\n".join(output).rstrip()
 
