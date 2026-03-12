@@ -99,7 +99,7 @@ def check_tabs_against_original(
     tabs_text: str,
     original_audio_path: str,
     sample_rate: int = 22050,
-    step_seconds: float = 0.14,
+    step_seconds: float = 0.125,
     note_seconds: float = 0.18,
 ) -> TabCheckResult:
     """Synthesize tabs and compare them with the original song using objective metrics."""
