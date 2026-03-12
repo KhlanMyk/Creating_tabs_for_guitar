@@ -1,4 +1,8 @@
-"""Refine generated tabs against original audio by correcting fret pitch choices."""
+"""Refine generated tabs against original audio by correcting fret pitch choices.
+
+Uses pyin (probabilistic YIN) for pitch tracking, which is more robust
+than plain YIN for polyphonic and noisy audio.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,47 +23,57 @@ class RefineTabsResult:
 def _estimate_step_seconds(cols: int, step_seconds: float | None) -> float:
     if step_seconds is not None and step_seconds > 0:
         return float(step_seconds)
-    # default timing used by synth in this project
-    if cols <= 0:
-        return 0.14
-    return 0.14
+    # default: each column = one 16th note at ~120 BPM
+    return 0.125
 
 
 def _format_tabs_from_grid(grid: list[list[str]], cols: int) -> str:
-    """Format a 6-row token grid into the professional measure-based tab format."""
+    """Format a 6-row token grid into the timing-proportional tab format.
+
+    Each column = one 16th-note slot.
+    16 slots per measure (4 beats × 4 sixteenths).
+    2 measures per display line.
+    """
     string_names = ["e", "B", "G", "D", "A", "E"]
+    slots_per_measure = 16
     beats_per_measure = 4
-    measures_per_line = 4
+    slots_per_beat = 4
+    measures_per_line = 2
 
-    # split columns into measures
-    measures: list[list[int]] = []
-    for i in range(0, cols, beats_per_measure):
-        measures.append(list(range(i, min(i + beats_per_measure, cols))))
-
-    # split measures into display lines
-    lines_of_measures: list[list[list[int]]] = []
-    for i in range(0, len(measures), measures_per_line):
-        lines_of_measures.append(measures[i : i + measures_per_line])
+    num_measures = max(1, (cols + slots_per_measure - 1) // slots_per_measure)
 
     output: list[str] = []
 
-    for line_measures in lines_of_measures:
+    for line_start in range(0, num_measures, measures_per_line):
+        line_end = min(line_start + measures_per_line, num_measures)
+
+        # Beat markers
+        beat_line = "  "
+        for m_idx in range(line_start, line_end):
+            for beat in range(beats_per_measure):
+                beat_line += str(beat + 1)
+                beat_line += " " * (slots_per_beat - 1)
+            beat_line += " "
+        beat_line = beat_line.rstrip()
+        if beat_line.strip():
+            output.append(beat_line)
+
+        # String lines
         for row in range(6):
             line = f"{string_names[row]}|"
-            for measure_cols in line_measures:
-                for ci in measure_cols:
-                    if ci < cols:
-                        token = grid[row][ci]
+            for m_idx in range(line_start, line_end):
+                m_start = m_idx * slots_per_measure
+                for slot_offset in range(slots_per_measure):
+                    abs_slot = m_start + slot_offset
+                    if abs_slot < cols:
+                        token = grid[row][abs_slot]
                         fret_str = "-" if token == "--" else token
                     else:
                         fret_str = "-"
-                    if len(fret_str) == 1:
-                        line += f"-{fret_str}-"
-                    else:
-                        line += f"{fret_str}-"
+                    line += fret_str
                 line += "|"
             output.append(line)
-        output.append("")  # blank line between systems
+        output.append("")
 
     return "\n".join(output).rstrip()
 
@@ -136,7 +150,8 @@ def refine_tabs_with_original(
     audio, _ = librosa.load(original_audio_path, sr=sr, mono=True, duration=preview_duration)
 
     hop_length = 512
-    f0 = librosa.yin(
+    # Use pyin (probabilistic) for more robust pitch tracking
+    f0, voiced_flag, voiced_probs = librosa.pyin(
         y=audio,
         fmin=librosa.note_to_hz("E2"),
         fmax=librosa.note_to_hz("E6"),
@@ -144,7 +159,14 @@ def refine_tabs_with_original(
         frame_length=2048,
         hop_length=hop_length,
     )
-    midi_track = librosa.hz_to_midi(f0)
+    if f0 is None:
+        f0 = np.zeros(1)
+    if voiced_probs is None:
+        voiced_probs = np.ones_like(f0)
+
+    # Replace NaN with 0 for hz_to_midi
+    f0_clean = np.where(np.isfinite(f0), f0, 0.0)
+    midi_track = np.where(f0_clean > 0, librosa.hz_to_midi(np.maximum(f0_clean, 1e-6)), 0.0)
 
     changes = 0
 
@@ -154,7 +176,12 @@ def refine_tabs_with_original(
         frame_idx = max(0, min(frame_idx, len(midi_track) - 1))
 
         target_midi = float(midi_track[frame_idx])
-        if not np.isfinite(target_midi):
+        if not np.isfinite(target_midi) or target_midi <= 0:
+            continue
+
+        # Also check voiced probability — skip if pitch is unreliable
+        vp = float(voiced_probs[frame_idx]) if frame_idx < len(voiced_probs) else 0.0
+        if vp < 0.4:
             continue
 
         for row in range(6):
@@ -167,11 +194,11 @@ def refine_tabs_with_original(
             new_fret = _closest_refined_fret(fret, string_num, target_midi, max_fret=max_fret)
 
             if new_fret != fret:
-                # apply only if improvement is meaningful
                 open_midi = OPEN_STRING_MIDI[string_num]
                 old_err = abs((open_midi + fret) - target_midi)
                 new_err = abs((open_midi + new_fret) - target_midi)
-                if (old_err - new_err) >= 0.8:
+                # Apply if clearly better (>0.5 semitone improvement)
+                if (old_err - new_err) >= 0.5:
                     grid[row][c] = str(new_fret)
                     changes += 1
 
