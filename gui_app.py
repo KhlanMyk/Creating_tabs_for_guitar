@@ -527,14 +527,22 @@ class GuitarTabApp(tk.Tk):
                 continue
 
             is_string_line = len(line) >= 2 and line[0] in "eBGDAE" and line[1] == "|"
-            is_chord_line = line.startswith("    ") and not is_string_line
+            is_chord_line = (line.startswith("  ") and not is_string_line
+                             and any(c.isalpha() for c in line)
+                             and not line.strip().startswith("Tempo"))
+            is_beat_marker = (line.startswith("  ") and not is_string_line
+                              and all(c in " 1234" for c in line))
 
             # gutter line number
             self._gutter.create_text(30, y + 2, text=str(line_no), anchor="e",
                                      fill=DIM if not is_string_line else MUTED,
                                      font=gutter_font)
 
-            if is_chord_line:
+            if is_beat_marker:
+                self.tab_canvas.create_text(pad_x, y, text=line, anchor="nw",
+                                            fill=DIM, font=tab_font)
+                y += line_height
+            elif is_chord_line:
                 self.tab_canvas.create_text(pad_x, y, text=line, anchor="nw",
                                             fill=TAB_ACCENT, font=chord_font)
                 y += line_height + 2
